@@ -1,0 +1,463 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="paperformat_vagirest_invoice" model="report.paperformat">
+        <field name="name">VAGIREST Invoice A4</field>
+        <field name="default" eval="False"/>
+        <field name="format">A4</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">8</field>
+        <field name="margin_bottom">8</field>
+        <field name="margin_left">8</field>
+        <field name="margin_right">8</field>
+        <field name="header_line" eval="False"/>
+        <field name="header_spacing">0</field>
+        <field name="dpi">90</field>
+    </record>
+
+    <record id="action_report_vagirest_invoice" model="ir.actions.report">
+        <field name="name">فاکتور فروش VAGIREST</field>
+        <field name="model">account.move</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">vagirest_invoice_report.report_vagirest_invoice</field>
+        <field name="report_file">vagirest_invoice_report.report_vagirest_invoice</field>
+        <field name="binding_model_id" ref="account.model_account_move"/>
+        <field name="binding_type">report</field>
+        <field name="paperformat_id" ref="vagirest_invoice_report.paperformat_vagirest_invoice"/>
+        <field name="print_report_name">'VAGIREST-Invoice-%s' % (object.name or 'Draft')</field>
+    </record>
+
+    <template id="report_vagirest_invoice">
+        <t t-call="web.basic_layout">
+
+            <style>
+                @font-face {
+                    font-family: 'BNazanin';
+                    src: url('/vagirest_invoice_report/static/src/fonts/BNazanin.ttf') format('truetype');
+                    font-weight: normal;
+                    font-style: normal;
+                }
+
+                @font-face {
+                    font-family: 'BNazanin';
+                    src: url('/vagirest_invoice_report/static/src/fonts/BNazanin-Bold.ttf') format('truetype');
+                    font-weight: bold;
+                    font-style: normal;
+                }
+
+                .vagirest-page,
+                .vagirest-page td,
+                .vagirest-page th,
+                .vagirest-page div,
+                .vagirest-page span {
+                    font-family: 'BNazanin', 'DejaVu Sans', sans-serif;
+                }
+
+                .vagirest-page {
+                    direction: rtl;
+                    text-align: right;
+                    color: #222;
+                    font-size: 16px;
+                    line-height: 1.45;
+                }
+
+                .v-title {
+                    font-size: 28px;
+                    font-weight: bold;
+                    text-align: center;
+                }
+
+                .v-bold {
+                    font-weight: bold;
+                }
+
+                .v-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                }
+
+                .v-table th {
+                    border: 1px solid #555;
+                    padding: 7px 4px;
+                    background: #eee3ed;
+                    text-align: center;
+                    vertical-align: middle;
+                    font-weight: bold;
+                }
+
+                .v-table td {
+                    border: 1px solid #666;
+                    padding: 7px 5px;
+                    vertical-align: middle;
+                }
+
+                .v-num {
+                    direction: ltr;
+                    text-align: center;
+                    white-space: nowrap;
+                }
+
+                .v-footer {
+                    border-top: 1px solid #aaa;
+                    padding-top: 7px;
+                    margin-top: 18px;
+                    text-align: center;
+                    font-size: 12px;
+                    line-height: 1.7;
+                }
+            </style>
+
+            <t t-foreach="docs" t-as="o">
+
+                <div class="page vagirest-page">
+
+                    <!-- HEADER -->
+                    <table style="width:100%; border-collapse:collapse; direction:ltr;
+                                  border-bottom:2px solid #a67aa4; margin-bottom:12px;">
+                        <tr>
+
+                            <!-- COMPANY INFORMATION -->
+                            <td style="width:76%; text-align:right; direction:rtl;
+                                       vertical-align:middle; padding:5px 8px 8px 8px;">
+
+                                <div class="v-bold" style="font-size:22px;">
+                                    شرکت دانشپاد علوی
+                                </div>
+
+                                <div style="font-size:17px; margin-top:1px;">
+                                    VAGIREST | واژیرست
+                                </div>
+
+                                <div style="font-size:13px; margin-top:5px;">
+                                    اصفهان، پارک علم و فناوری سلامت دانشگاه علوم پزشکی اصفهان
+                                </div>
+
+                            </td>
+
+                            <!-- LOGO -->
+                            <td style="width:24%; text-align:center;
+                                       vertical-align:middle; padding:5px 8px;">
+
+                                <img t-if="o.company_id.logo"
+                                     t-att-src="image_data_uri(o.company_id.logo)"
+                                     style="max-height:65px; max-width:150px;"/>
+
+                            </td>
+
+                        </tr>
+                    </table>
+
+
+                    <!-- TITLE -->
+                    <div style="margin:8px 0 14px 0;">
+                        <div class="v-title">
+                            <t t-if="o.state == 'draft'">
+                                پیش‌فاکتور فروش
+                            </t>
+                            <t t-else="">
+                                فاکتور فروش
+                            </t>
+                        </div>
+                    </div>
+
+
+                    <!-- CUSTOMER / INVOICE INFORMATION -->
+                    <table style="width:100%; border-collapse:collapse; margin-bottom:14px;">
+
+                        <tr>
+                            <td style="width:50%; border:1px solid #999; padding:7px;">
+                                <span class="v-bold">خریدار:</span>
+                                <span t-field="o.partner_id.name"/>
+                            </td>
+
+                            <td style="width:50%; border:1px solid #999; padding:7px;">
+                                <span class="v-bold">شماره فاکتور:</span>
+                                <span t-field="o.name"/>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="border:1px solid #999; padding:7px;">
+                                <span class="v-bold">شماره تماس:</span>
+
+                                <t t-if="o.partner_id.mobile">
+                                    <span t-field="o.partner_id.mobile"/>
+                                </t>
+
+                                <t t-else="">
+                                    <span t-field="o.partner_id.phone"/>
+                                </t>
+                            </td>
+
+                            <td style="border:1px solid #999; padding:7px;">
+                                <span class="v-bold">تاریخ:</span>
+                                <span t-esc="o._vagirest_format_jalali(o.invoice_date or o.date)"/>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="border:1px solid #999; padding:7px;">
+                                <span class="v-bold">آدرس:</span>
+                                <span t-field="o.partner_id.contact_address"/>
+                            </td>
+
+                            <td style="border:1px solid #999; padding:7px;">
+                                <span class="v-bold">مهلت پرداخت:</span>
+                                <span t-esc="o._vagirest_format_jalali(o.invoice_date_due)"/>
+                            </td>
+                        </tr>
+
+                    </table>
+
+
+                    <!-- CALCULATION VARIABLES -->
+                    <t t-set="rowno" t-value="0"/>
+                    <t t-set="sum_before_discount" t-value="0.0"/>
+                    <t t-set="sum_discount" t-value="0.0"/>
+
+
+                    <!-- PRODUCT TABLE -->
+                    <table class="v-table">
+
+                        <thead>
+                            <tr>
+                                <th style="width:5%;">ردیف</th>
+                                <th style="width:32%;">شرح کالا</th>
+                                <th style="width:8%;">تعداد</th>
+                                <th style="width:16%;">مبلغ واحد</th>
+                                <th style="width:9%;">تخفیف</th>
+                                <th style="width:14%;">تخفیف واحد</th>
+                                <th style="width:16%;">مبلغ نهایی</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                            <t t-foreach="o.invoice_line_ids" t-as="line">
+
+                                <t t-if="line.display_type == 'product'">
+
+                                    <t t-set="rowno"
+                                       t-value="rowno + 1"/>
+
+                                    <t t-set="line_before"
+                                       t-value="line.quantity * line.price_unit"/>
+
+                                    <t t-set="discount_per_unit"
+                                       t-value="line.price_unit * line.discount / 100.0"/>
+
+                                    <t t-set="line_discount"
+                                       t-value="line_before - line.price_subtotal"/>
+
+                                    <t t-set="sum_before_discount"
+                                       t-value="sum_before_discount + line_before"/>
+
+                                    <t t-set="sum_discount"
+                                       t-value="sum_discount + line_discount"/>
+
+                                    <tr>
+
+                                        <td class="v-num">
+                                            <span t-esc="rowno"/>
+                                        </td>
+
+                                        <td style="text-align:right;">
+                                            <span t-field="line.name"/>
+                                        </td>
+
+                                        <td class="v-num">
+                                            <span t-esc="'{:g}'.format(line.quantity)"/>
+                                        </td>
+
+                                        <td class="v-num">
+                                            <span t-esc="'{:,.0f}'.format(line.price_unit)"/>
+                                        </td>
+
+                                        <td class="v-num">
+                                            <span t-esc="'{:g}'.format(line.discount)"/> %
+                                        </td>
+
+                                        <td class="v-num">
+                                            <span t-esc="'{:,.0f}'.format(discount_per_unit)"/>
+                                        </td>
+
+                                        <td class="v-num v-bold">
+                                            <span t-esc="'{:,.0f}'.format(line.price_subtotal)"/>
+                                        </td>
+
+                                    </tr>
+
+                                </t>
+
+                            </t>
+
+                        </tbody>
+                    </table>
+
+
+                    <!-- SUMMARY - IMMEDIATELY UNDER PRODUCT TABLE / RIGHT ALIGNED -->
+                    <table style="
+                        width:48%;
+                        border-collapse:collapse;
+                        margin-top:-1px;
+                        margin-left:auto;
+                        margin-right:0;
+                    ">
+
+                        <tr>
+                            <td class="v-bold"
+                                style="width:52%; border:1px solid #666; padding:7px;">
+                                جمع قبل از تخفیف
+                            </td>
+
+                            <td class="v-num"
+                                style="width:48%; border:1px solid #666; padding:7px;">
+                                <span t-esc="'{:,.0f}'.format(sum_before_discount)"/>
+                                ریال
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="v-bold"
+                                style="border:1px solid #666; padding:7px;">
+                                مجموع تخفیف
+                            </td>
+
+                            <td class="v-num"
+                                style="border:1px solid #666; padding:7px;">
+                                <span t-esc="'{:,.0f}'.format(sum_discount)"/>
+                                ریال
+                            </td>
+                        </tr>
+
+                        <tr style="background:#eee3ed;">
+                            <td class="v-bold"
+                                style="border:2px solid #555; padding:9px; font-size:18px;">
+                                مبلغ قابل پرداخت
+                            </td>
+
+                            <td class="v-num v-bold"
+                                style="border:2px solid #555; padding:9px; font-size:18px;">
+                                <span t-esc="'{:,.0f}'.format(o.amount_total)"/>
+                                ریال
+                            </td>
+                        </tr>
+
+                    </table>
+
+
+                    <!-- AMOUNT IN WORDS -->
+                    <div style="margin-top:14px; border:1px solid #999; padding:8px;">
+                        <span class="v-bold">مبلغ به حروف:</span>
+                        <span>
+                            در مرحله بعد به‌صورت خودکار اضافه خواهد شد.
+                        </span>
+                    </div>
+
+
+                    <!-- TERMS -->
+                    <div style="margin-top:14px; font-size:15px;">
+                        کلیه اجناس فوق تا زمان تسویه حساب نزد خریدار به صورت امانت می‌باشد.
+                    </div>
+
+                    <div style="margin-top:7px; font-size:15px;">
+                        لطفاً مبلغ مورد نظر را به حساب زیر واریز فرمایید:
+                    </div>
+
+
+                    <!-- BANK DETAILS -->
+                    <table style="
+                        width:70%;
+                        margin-top:6px;
+                        margin-left:auto;
+                        margin-right:0;
+                        border-collapse:collapse;
+                    ">
+
+                        <tr>
+                            <td class="v-bold"
+                                style="width:25%; padding:4px;">
+                                شماره کارت:
+                            </td>
+
+                            <td style="padding:4px; direction:ltr; text-align:right;">
+                                5894-6314-0056-5933
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="v-bold"
+                                style="padding:4px;">
+                                شماره شبا:
+                            </td>
+
+                            <td style="padding:4px; direction:ltr; text-align:right;">
+                                IR970130100000000383324350
+                            </td>
+                        </tr>
+
+                    </table>
+
+
+                    <!-- STAMP -->
+                    <table style="
+                        width:100%;
+                        border-collapse:collapse;
+                        margin-top:25px;
+                    ">
+
+                        <tr>
+
+                            <td style="width:55%;"></td>
+
+                            <td style="
+                                width:45%;
+                                text-align:center;
+                                vertical-align:bottom;
+                            ">
+
+                                <div class="v-bold"
+                                     style="margin-bottom:5px;">
+                                    مهر و امضای فروشنده
+                                </div>
+
+                                <img src="/vagirest_invoice_report/static/src/img/stamp.png"
+                                     style="
+                                         width:210px;
+                                         height:auto;
+                                         max-height:95px;
+                                     "/>
+
+                            </td>
+
+                        </tr>
+
+                    </table>
+
+
+                    <!-- FOOTER -->
+                    <div class="v-footer">
+
+                        <div style="direction:rtl;">
+                            اصفهان، پارک علم و فناوری سلامت دانشگاه علوم پزشکی اصفهان
+                        </div>
+
+                        <div style="direction:ltr; margin-top:2px;">
+                            09911182845
+                            &#160; | &#160;
+                            info@vagirest.com
+                            &#160; | &#160;
+                            www.vagirest.com
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </t>
+
+        </t>
+    </template>
+
+</odoo>

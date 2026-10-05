@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="group_sale_order_jalali_date_edit" model="res.groups">
+        <field name="name">ویرایش تاریخ سفارش شمسی</field>
+        <field name="comment">اجازه ویرایش تاریخ سفارش شمسی</field>
+    </record>
+</odoo>

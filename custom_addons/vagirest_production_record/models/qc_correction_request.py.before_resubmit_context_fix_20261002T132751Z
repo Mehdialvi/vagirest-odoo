@@ -1,0 +1,631 @@
+import json
+
+from odoo import api, fields, models, _
+from odoo.exceptions import UserError
+
+
+class VagirestQCCorrectionRequest(models.Model):
+    _name = "vagirest.qc.correction.request"
+    _description = "VAGIREST QC Correction Request"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "id desc"
+
+    name = fields.Char(
+        string="Request Number",
+        default="New",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    qc_record_id = fields.Many2one(
+        "vagirest.qc.record",
+        string="QC Record",
+        required=True,
+        readonly=True,
+        ondelete="restrict",
+        tracking=True,
+    )
+
+    requester_id = fields.Many2one(
+        "res.users",
+        string="Requested By",
+        required=True,
+        readonly=True,
+        default=lambda self: self.env.user,
+        tracking=True,
+    )
+
+    requested_at = fields.Datetime(
+        string="Requested At",
+        default=fields.Datetime.now,
+        readonly=True,
+        tracking=True,
+    )
+
+    action_type = fields.Selection(
+        [
+            ("reopen", "Reopen QC Decision for Correction"),
+            ("cancel", "Cancel QC Decision"),
+        ],
+        string="Requested Action",
+        required=True,
+        default="reopen",
+        tracking=True,
+    )
+
+    reason = fields.Text(
+        string="Correction Reason",
+        required=True,
+        tracking=True,
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("submitted", "Waiting for Approval"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+            ("applied", "Applied"),
+        ],
+        default="draft",
+        required=True,
+        readonly=True,
+        tracking=True,
+    )
+
+    reviewed_by_id = fields.Many2one(
+        "res.users",
+        string="Reviewed By",
+        readonly=True,
+        tracking=True,
+    )
+
+    reviewed_at = fields.Datetime(
+        string="Reviewed At",
+        readonly=True,
+        tracking=True,
+    )
+
+    review_note = fields.Text(
+        string="Review / Override Note",
+        tracking=True,
+    )
+
+    approved_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Approved Reversal",
+        readonly=True,
+        copy=False,
+    )
+
+    rework_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Rework Reversal",
+        readonly=True,
+        copy=False,
+    )
+
+    rejected_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Rejected Reversal",
+        readonly=True,
+        copy=False,
+    )
+
+    before_snapshot = fields.Text(
+        string="Before Correction Snapshot",
+        readonly=True,
+        copy=False,
+    )
+
+    after_snapshot = fields.Text(
+        string="After Correction Snapshot",
+        readonly=True,
+        copy=False,
+    )
+
+    change_summary = fields.Text(
+        string="Recorded Changes",
+        readonly=True,
+        copy=False,
+    )
+
+    applied_at = fields.Datetime(
+        string="Applied At",
+        readonly=True,
+        copy=False,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        sequence = (
+            self.env["ir.sequence"]
+            .sudo()
+            .with_company(self.env.company)
+        )
+
+        for vals in vals_list:
+            if vals.get("name", "New") == "New":
+                vals["name"] = (
+                    sequence.next_by_code(
+                        "vagirest.qc.correction.request"
+                    )
+                    or "New"
+                )
+
+            # Never trust requester_id coming from RPC/UI.
+            vals["requester_id"] = self.env.user.id
+
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if not self.env.su:
+            protected = {
+                "state",
+                "requester_id",
+                "requested_at",
+                "reviewed_by_id",
+                "reviewed_at",
+                "approved_reversal_picking_id",
+                "rework_reversal_picking_id",
+                "rejected_reversal_picking_id",
+                "before_snapshot",
+                "after_snapshot",
+                "change_summary",
+                "applied_at",
+                "qc_record_id",
+            }
+
+            if protected.intersection(vals):
+                raise UserError(
+                    _(
+                        "System-controlled QC correction fields "
+                        "cannot be edited."
+                    )
+                )
+
+            for request in self:
+                if request.state != "draft":
+                    allowed = {"review_note"}
+
+                    if not set(vals).issubset(allowed):
+                        raise UserError(
+                            _(
+                                "A submitted QC correction request "
+                                "cannot be edited."
+                            )
+                        )
+
+        return super().write(vals)
+
+    def unlink(self):
+        raise UserError(
+            _(
+                "QC correction requests cannot be deleted. "
+                "They are part of the audit trail."
+            )
+        )
+
+    def _snapshot(self):
+        self.ensure_one()
+
+        qc = self.qc_record_id
+
+        data = {
+            "qc_record_id": qc.id,
+            "qc_record_name": qc.display_name,
+            "production_record_id": (
+                qc.production_record_id.id
+                if qc.production_record_id
+                else False
+            ),
+            "production_record": (
+                qc.production_record_id.display_name
+                if qc.production_record_id
+                else False
+            ),
+            "state": qc.state,
+            "note": qc.note or "",
+            "decision_date": (
+                str(qc.decision_date)
+                if qc.decision_date
+                else False
+            ),
+            "inspector_id": (
+                qc.inspector_id.id
+                if qc.inspector_id
+                else False
+            ),
+            "inspector": (
+                qc.inspector_id.display_name
+                if qc.inspector_id
+                else False
+            ),
+            "lines": [
+                {
+                    "line_id": line.id,
+                    "product_id": line.product_id.id,
+                    "product": line.product_id.display_name,
+                    "lot_id": (
+                        line.lot_id.id
+                        if line.lot_id
+                        else False
+                    ),
+                    "lot": (
+                        line.lot_id.name
+                        if line.lot_id
+                        else False
+                    ),
+                    "produced_qty": line.produced_qty,
+                    "approved_qty": line.approved_qty,
+                    "rework_qty": line.rework_qty,
+                    "rejected_qty": line.rejected_qty,
+                }
+                for line in qc.line_ids.sorted("id")
+            ],
+            "approved_picking_id": (
+                qc.approved_picking_id.id
+                if qc.approved_picking_id
+                else False
+            ),
+            "rework_picking_id": (
+                qc.rework_picking_id.id
+                if qc.rework_picking_id
+                else False
+            ),
+            "rejected_picking_id": (
+                qc.rejected_picking_id.id
+                if qc.rejected_picking_id
+                else False
+            ),
+        }
+
+        return json.dumps(
+            data,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+
+    def action_submit_request(self):
+        for request in self:
+            if request.state != "draft":
+                raise UserError(
+                    _("Only Draft QC requests can be submitted.")
+                )
+
+            if not (request.reason or "").strip():
+                raise UserError(
+                    _("QC correction reason is required.")
+                )
+
+            qc = request.qc_record_id
+
+            if qc.state != "done":
+                raise UserError(
+                    _(
+                        "Only a Done QC decision can enter "
+                        "the correction workflow."
+                    )
+                )
+
+            existing = self.search_count([
+                ("id", "!=", request.id),
+                ("qc_record_id", "=", qc.id),
+                ("state", "in", ["submitted", "approved"]),
+            ])
+
+            if existing:
+                raise UserError(
+                    _(
+                        "Another QC correction request is already "
+                        "open for this QC record."
+                    )
+                )
+
+            request.sudo().write({
+                "state": "submitted",
+                "before_snapshot": request._snapshot(),
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>QC correction requested.</b>"
+                    "<br/>Request: %s"
+                    "<br/>Requested by: %s"
+                    "<br/>Reason: %s"
+                )
+                % (
+                    request.display_name,
+                    request.requester_id.display_name,
+                    request.reason,
+                )
+            )
+
+        return True
+
+    def _check_approver(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may approve "
+                    "a QC correction request."
+                )
+            )
+
+    def action_approve(self):
+        self._check_approver()
+
+        for request in self:
+            if request.state != "submitted":
+                raise UserError(
+                    _("Only submitted QC requests can be approved.")
+                )
+
+            is_erp_manager = self.env.user.has_group(
+                "vagirest_production_record."
+                "group_vagirest_erp_manager"
+            )
+
+            if (
+                request.requester_id == self.env.user
+                and not is_erp_manager
+            ):
+                raise UserError(
+                    _("You cannot approve your own QC request.")
+                )
+
+            if (
+                request.requester_id == self.env.user
+                and is_erp_manager
+                and not (request.review_note or "").strip()
+            ):
+                raise UserError(
+                    _(
+                        "ERP Manager self-approval requires "
+                        "an Override Reason in Review Note."
+                    )
+                )
+
+            qc = request.qc_record_id.with_user(self.env.user)
+
+            if qc.state != "done":
+                raise UserError(
+                    _("The QC record is no longer in Done state.")
+                )
+
+            # Feed the already-audited request reason into the existing
+            # controlled reversal method.
+            qc.write({
+                "correction_reason": request.reason,
+            })
+
+            if request.action_type == "reopen":
+                qc.action_reopen_decision()
+                new_request_state = "approved"
+            else:
+                qc.action_cancel_decision()
+                new_request_state = "applied"
+
+            qc.invalidate_recordset()
+
+            request.sudo().write({
+                "state": new_request_state,
+                "reviewed_by_id": self.env.user.id,
+                "reviewed_at": fields.Datetime.now(),
+                "approved_reversal_picking_id": (
+                    qc.approved_reversal_picking_id.id
+                    if qc.approved_reversal_picking_id
+                    else False
+                ),
+                "rework_reversal_picking_id": (
+                    qc.rework_reversal_picking_id.id
+                    if qc.rework_reversal_picking_id
+                    else False
+                ),
+                "rejected_reversal_picking_id": (
+                    qc.rejected_reversal_picking_id.id
+                    if qc.rejected_reversal_picking_id
+                    else False
+                ),
+                "applied_at": (
+                    fields.Datetime.now()
+                    if new_request_state == "applied"
+                    else False
+                ),
+            })
+
+            if request.action_type == "reopen":
+                qc.sudo().write({
+                    "active_qc_correction_request_id": request.id,
+                })
+
+            request.message_post(
+                body=_(
+                    "<b>QC correction request approved.</b>"
+                    "<br/>Request: %s"
+                    "<br/>Requester: %s"
+                    "<br/>Approved by: %s"
+                    "<br/>Reason: %s"
+                )
+                % (
+                    request.display_name,
+                    request.requester_id.display_name,
+                    self.env.user.display_name,
+                    request.reason,
+                )
+            )
+
+        return True
+
+    def action_reject(self):
+        self._check_approver()
+
+        for request in self:
+            if request.state != "submitted":
+                raise UserError(
+                    _("Only submitted QC requests can be rejected.")
+                )
+
+            if not (request.review_note or "").strip():
+                raise UserError(
+                    _("Enter the rejection reason in Review Note.")
+                )
+
+            request.sudo().write({
+                "state": "rejected",
+                "reviewed_by_id": self.env.user.id,
+                "reviewed_at": fields.Datetime.now(),
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>QC correction request rejected.</b>"
+                    "<br/>Request: %s"
+                    "<br/>Reviewed by: %s"
+                    "<br/>Reason: %s"
+                )
+                % (
+                    request.display_name,
+                    self.env.user.display_name,
+                    request.review_note,
+                )
+            )
+
+        return True
+
+
+class VagirestQCRecordCorrectionRequest(models.Model):
+    _inherit = "vagirest.qc.record"
+
+    qc_correction_request_ids = fields.One2many(
+        "vagirest.qc.correction.request",
+        "qc_record_id",
+        string="QC Correction Requests",
+    )
+
+    active_qc_correction_request_id = fields.Many2one(
+        "vagirest.qc.correction.request",
+        string="Active QC Correction Request",
+        readonly=True,
+        copy=False,
+    )
+
+    qc_correction_request_count = fields.Integer(
+        compute="_compute_qc_correction_request_count"
+    )
+
+    @api.depends("qc_correction_request_ids")
+    def _compute_qc_correction_request_count(self):
+        for record in self:
+            record.qc_correction_request_count = len(
+                record.qc_correction_request_ids
+            )
+
+    def action_request_qc_correction(self):
+        self.ensure_one()
+
+        if self.state != "done":
+            raise UserError(
+                _(
+                    "QC correction can only be requested "
+                    "for a Done QC record."
+                )
+            )
+
+        Request = self.env[
+            "vagirest.qc.correction.request"
+        ]
+
+        request = Request.search([
+            ("qc_record_id", "=", self.id),
+            ("state", "=", "draft"),
+            ("requester_id", "=", self.env.user.id),
+        ], limit=1)
+
+        if not request:
+            request = Request.create({
+                "qc_record_id": self.id,
+            })
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("QC Correction Request"),
+            "res_model": "vagirest.qc.correction.request",
+            "res_id": request.id,
+            "view_mode": "form",
+            "target": "current",
+        }
+
+    def action_open_qc_correction_requests(self):
+        self.ensure_one()
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("QC Correction Requests"),
+            "res_model": "vagirest.qc.correction.request",
+            "view_mode": "tree,form",
+            "domain": [
+                ("qc_record_id", "=", self.id)
+            ],
+            "context": {
+                "default_qc_record_id": self.id
+            },
+        }
+
+    def action_submit_decision(self):
+        active_requests = {
+            record.id: record.active_qc_correction_request_id
+            for record in self
+            if record.active_qc_correction_request_id
+            and record.active_qc_correction_request_id.state == "approved"
+        }
+
+        result = super().action_submit_decision()
+
+        for record in self:
+            request = active_requests.get(record.id)
+
+            if not request:
+                continue
+
+            record.invalidate_recordset()
+
+            after_snapshot = request._snapshot()
+
+            summary = (
+                "QC decision was corrected and resubmitted.\n"
+                "Original and corrected QC snapshots are stored "
+                "on this request."
+            )
+
+            if request.before_snapshot == after_snapshot:
+                summary += (
+                    "\nWarning: no user-data difference was detected."
+                )
+
+            request.sudo().write({
+                "state": "applied",
+                "after_snapshot": after_snapshot,
+                "change_summary": summary,
+                "applied_at": fields.Datetime.now(),
+            })
+
+            record.sudo().write({
+                "active_qc_correction_request_id": False,
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>Approved QC correction applied "
+                    "and QC decision resubmitted.</b>"
+                    "<br/>Request: %s"
+                )
+                % request.display_name
+            )
+
+        return result

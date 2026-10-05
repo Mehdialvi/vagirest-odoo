@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="vagirest_native_dashboard.JalaliDateInput">
+        <div class="d-flex flex-column me-1" style="min-width:145px">
+            <input class="o_input" dir="ltr" type="text"
+                   t-att-value="state.text" placeholder="۱۴۰۵/۰۷/۰۱"
+                   t-att-aria-label="props.placeholder || 'تاریخ شمسی'"
+                   title="تاریخ شمسی — سال/ماه/روز"
+                   t-on-input="onInput" t-on-change="commit"/>
+            <small t-if="state.error" class="text-danger" role="alert" t-esc="state.error"/>
+        </div>
+    </t>
+</templates>

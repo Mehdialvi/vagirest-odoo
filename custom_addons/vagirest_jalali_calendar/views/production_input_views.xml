@@ -1,0 +1,39 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<odoo>
+
+    <record id="view_production_record_form_jalali_input" model="ir.ui.view">
+
+        <field name="name">vagirest.production.record.form.jalali.input</field>
+
+        <field name="model">vagirest.production.record</field>
+
+        <field name="inherit_id" ref="vagirest_jalali_calendar.view_production_record_form_jalali"/>
+
+        <field name="priority">30</field>
+
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='production_date_jalali']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+
+            <xpath expr="//field[@name='production_date']" position="after">
+
+                <group string="ورود سریع تاریخ شمسی" col="4">
+
+                    <field name="production_jalali_year" string="سال" readonly="state != 'draft'"/>
+
+                    <field name="production_jalali_month" string="ماه" readonly="state != 'draft'"/>
+
+                    <field name="production_jalali_day" string="روز" readonly="state != 'draft'"/>
+
+                    <button name="action_set_production_date_today" type="object" string="امروز" class="btn-secondary" invisible="state != 'draft'"/>
+
+                </group>
+
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>

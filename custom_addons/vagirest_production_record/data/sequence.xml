@@ -1,0 +1,30 @@
+<odoo>
+    <record id="seq_vagirest_production_record" model="ir.sequence">
+        <field name="name">VAGIREST Production Record</field>
+        <field name="code">vagirest.production.record</field>
+        <field name="prefix">VPR/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+    <record id="seq_vagirest_qc_record" model="ir.sequence">
+        <field name="name">VAGIREST QC Record</field>
+        <field name="code">vagirest.qc.record</field>
+        <field name="prefix">VQC/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+    <record id="seq_vagirest_rework_record" model="ir.sequence">
+        <field name="name">VAGIREST Rework Record</field>
+        <field name="code">vagirest.rework.record</field>
+        <field name="prefix">VRW/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+    <record id="seq_vagirest_rework_qc_record" model="ir.sequence">
+        <field name="name">VAGIREST Rework QC Record</field>
+        <field name="code">vagirest.rework.qc.record</field>
+        <field name="prefix">VRQC/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+</odoo>

@@ -1,0 +1,394 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<odoo>
+
+    <!-- ================================================= -->
+    <!-- F01 LIST                                          -->
+    <!-- ================================================= -->
+
+    <record id="view_vagirest_material_request_tree" model="ir.ui.view">
+        <field name="name">vagirest.material.request.tree</field>
+        <field name="model">vagirest.material.request</field>
+        <field name="arch" type="xml">
+
+            <tree string="درخواست کالا از انبار">
+
+                <field name="name"/>
+                <field name="request_date"/>
+                <field name="requester_id"/>
+                <field name="requesting_unit"/>
+                <field name="warehouse_receiver_id"/>
+                <field name="state"/>
+
+            </tree>
+
+        </field>
+    </record>
+
+
+    <!-- ================================================= -->
+    <!-- F01 FORM                                          -->
+    <!-- ================================================= -->
+
+    <record id="view_vagirest_material_request_form" model="ir.ui.view">
+
+        <field name="name">vagirest.material.request.form</field>
+
+        <field name="model">vagirest.material.request</field>
+
+        <field name="arch" type="xml">
+
+            <form string="F01 - درخواست کالا از انبار">
+
+                <header>
+
+                    <button name="action_submit" type="object" string="ارسال درخواست" class="btn-primary" invisible="state != 'draft'"/>
+
+                    <button name="action_receive_warehouse" type="object" string="دریافت توسط انبار" class="btn-primary" groups="vagirest_inventory_qms.group_vagirest_warehouse_receiver" invisible="state != 'submitted'"/>
+
+                    <button name="action_create_f04" type="object" string="ایجاد برگه تحویل F04" class="btn-primary" groups="vagirest_inventory_qms.group_vagirest_warehouse_receiver" invisible="state != 'warehouse_received'"/>
+
+                    <button name="action_open_f04" type="object" string="مشاهده F04" class="btn-secondary" invisible="not delivery_id"/>
+
+                    <field name="state" widget="statusbar" statusbar_visible="draft,submitted,warehouse_received,ready,done" string="وضعیت"/>
+
+                </header>
+
+
+                <sheet>
+
+                    <div class="vagirest_form_identity_f01" style="border:1px solid #bbb; padding:12px; margin-bottom:18px; border-radius:6px;">
+    <table style="width:100%; border-collapse:collapse;">
+        <tr>
+            <td style="width:18%; text-align:center; vertical-align:middle;">
+                <field name="company_logo" widget="image" nolabel="1" readonly="1" options="{'size': [0, 90]}"/>
+            </td>
+
+            <td style="width:64%; text-align:center; vertical-align:middle;">
+                <div style="font-size:18px; font-weight:bold;">
+                    شرکت دانشپاد علوی
+                </div>
+
+                <div style="font-size:22px; font-weight:bold; margin-top:6px;">
+                    درخواست کالا از انبار
+                </div>
+            </td>
+
+            <td style="width:18%; text-align:center; vertical-align:middle;">
+                <div style="font-weight:bold;">
+                    کد فرم
+                </div>
+                <div style="font-size:17px; margin-top:4px;">
+                    F01-ST/00
+                </div>
+            </td>
+        </tr>
+    </table>
+</div><div class="oe_title">
+
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+
+                        <h2>
+                            درخواست کالا از انبار
+                        </h2>
+
+                    </div>
+
+
+                    <group>
+
+                        <group string="مشخصات درخواست">
+
+                            <field name="document_code"/>
+
+                            <field name="request_date" readonly="state != 'draft'"/>
+
+                            <field name="requester_id"/>
+
+                            <field name="requesting_unit" readonly="state != 'draft'"/>
+
+                        </group>
+
+
+                        <group string="اطلاعات انبار">
+
+                            <field name="warehouse_responsible_id" string="مسئول انبار" readonly="1"/><field name="warehouse_receiver_id"/>
+
+                            <field name="warehouse_received_at"/>
+
+                            <field name="delivery_id"/>
+
+                        </group>
+
+                    </group>
+
+
+                    <separator string="اقلام درخواستی"/>
+
+
+                    <field name="line_ids" readonly="state != 'draft'">
+
+                        <tree editable="bottom">
+
+                            <field name="sequence" widget="handle"/>
+
+                            <field name="product_id"/>
+
+                            <field name="product_code"/>
+
+                            <field name="description"/>
+
+                            <field name="serial_or_lot"/>
+
+                            <field name="requested_qty"/>
+
+                            <field name="delivered_qty" optional="show"/>
+
+                            <field name="uom_id"/>
+
+                            <field name="usage_location"/>
+
+                            <field name="note"/>
+
+                        </tree>
+
+                    </field>
+
+
+                    <group>
+
+                        <field name="note" readonly="state != 'draft'" placeholder="توضیحات درخواست..."/>
+
+                    </group>
+
+
+                    <group string="تأیید و پیگیری">
+
+                        <group>
+                            <field name="requester_id" string="درخواست‌کننده"/>
+                        </group>
+
+                        <group>
+                            <field name="warehouse_receiver_id" string="مسئول انبار"/>
+                        </group>
+
+                    </group>
+
+                </sheet>
+
+
+                <chatter/>
+
+            </form>
+
+        </field>
+
+    </record>
+
+
+    <!-- ================================================= -->
+    <!-- F04 LIST                                          -->
+    <!-- ================================================= -->
+
+    <record id="view_vagirest_warehouse_delivery_tree" model="ir.ui.view">
+
+        <field name="name">vagirest.warehouse.delivery.tree</field>
+
+        <field name="model">vagirest.warehouse.delivery</field>
+
+        <field name="arch" type="xml">
+
+            <tree string="F04 - برگه‌های تحویل">
+
+                <field name="name"/>
+                <field name="delivery_date"/>
+                <field name="permit_number"/>
+                <field name="request_id"/>
+                <field name="recipient_id"/>
+                <field name="warehouse_user_id"/>
+                <field name="state"/>
+
+            </tree>
+
+        </field>
+
+    </record>
+
+
+    <!-- ================================================= -->
+    <!-- F04 FORM                                          -->
+    <!-- ================================================= -->
+
+    <record id="view_vagirest_warehouse_delivery_form" model="ir.ui.view">
+
+        <field name="name">vagirest.warehouse.delivery.form</field>
+
+        <field name="model">vagirest.warehouse.delivery</field>
+
+        <field name="arch" type="xml">
+
+            <form string="F04 - برگه تحویل و مجوز خروج انبار">
+
+                <header>
+
+                    <button name="action_mark_ready" type="object" string="آماده تحویل" class="btn-primary" groups="vagirest_inventory_qms.group_vagirest_warehouse_receiver" invisible="state != 'draft'"/>
+
+                    <button name="action_finalize_delivery" type="object" string="تحویل نهایی و ثبت در انبار" class="btn-primary" groups="vagirest_inventory_qms.group_vagirest_warehouse_receiver" invisible="state != 'ready'"/><field name="state" widget="statusbar" statusbar_visible="draft,ready,done" string="وضعیت"/>
+
+                <button name="action_reverse_delivery" type="object" string="اصلاح / برگشت تحویل" class="btn-secondary" groups="vagirest_inventory_qms.group_vagirest_warehouse_receiver" invisible="state != 'done'" confirm="آیا از برگشت کامل این تحویل و موجودی آن مطمئن هستید؟"/></header>
+
+
+                <sheet>
+
+                    <div class="vagirest_form_identity_f04" style="border:1px solid #bbb; padding:12px; margin-bottom:18px; border-radius:6px;">
+    <table style="width:100%; border-collapse:collapse;">
+        <tr>
+            <td style="width:18%; text-align:center; vertical-align:middle;">
+                <field name="company_logo" widget="image" nolabel="1" readonly="1" options="{'size': [0, 90]}"/>
+            </td>
+
+            <td style="width:64%; text-align:center; vertical-align:middle;">
+                <div style="font-size:18px; font-weight:bold;">
+                    شرکت دانش پاد علوی
+                </div>
+
+                <div style="font-size:22px; font-weight:bold; margin-top:6px;">
+                    فرم برگه تحویل و مجوز خروج انبار
+                </div>
+            </td>
+
+            <td style="width:18%; text-align:center; vertical-align:middle;">
+                <div style="font-weight:bold;">
+                    کد فرم
+                </div>
+                <div style="font-size:17px; margin-top:4px;">
+                    F04-ST/00
+                </div>
+            </td>
+        </tr>
+    </table>
+</div><div class="oe_title">
+
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+
+                        <h2>
+                            برگه تحویل و مجوز خروج انبار
+                        </h2>
+
+                    </div>
+
+
+                    <group>
+
+                        <group string="مشخصات سند">
+
+                            <field name="document_code"/>
+
+                            <field name="delivery_date"/>
+
+                            <field name="permit_number"/>
+
+                            <field name="request_id"/>
+
+                        <field name="destination_location_id" readonly="state != 'draft'"/></group>
+
+
+                        <group string="تحویل و تأیید">
+
+                            <field name="recipient_id"/>
+
+                            <field name="warehouse_responsible_id" string="مسئول انبار" readonly="1"/><field name="warehouse_user_id"/>
+
+                            <field name="technical_manager_id"/>
+
+                        </group>
+
+                    </group>
+
+
+                    <separator string="اقلام تحویلی"/>
+
+
+                    <field name="line_ids" readonly="state != 'draft'">
+
+                        <tree editable="bottom" create="0" delete="0">
+
+                            <field name="product_id"/>
+
+                            <field name="source_location_id"/><field name="requested_qty"/>
+
+                            <field name="delivered_qty"/>
+
+                            <field name="uom_id"/>
+
+                            <field name="requested_serial_or_lot"/>
+
+                            <field name="lot_id"/>
+
+                            <field name="usage_location"/>
+
+                            <field name="note"/>
+
+                        </tree>
+
+                    </field>
+
+
+                    <group>
+
+                        <field name="note" placeholder="توضیحات تحویل..."/>
+
+                    </group>
+
+                <group string="ثبت انبار"><field name="picking_ids" widget="many2many_tags" readonly="1"/><field name="finalized_by_id" readonly="1"/><field name="finalized_at" readonly="1"/></group><group string="اصلاح / برگشت"><field name="reverse_reason" readonly="state != 'done'" placeholder="علت اصلاح یا برگشت را وارد کنید..."/><field name="reverse_picking_ids" widget="many2many_tags" readonly="1"/><field name="reversed_by_id" readonly="1"/><field name="reversed_at" readonly="1"/></group></sheet>
+
+
+                <chatter/>
+
+            </form>
+
+        </field>
+
+    </record>
+
+
+    <!-- ================================================= -->
+    <!-- ACTIONS                                           -->
+    <!-- ================================================= -->
+
+    <record id="action_vagirest_material_request" model="ir.actions.act_window">
+
+        <field name="name">درخواست کالا از انبار</field>
+
+        <field name="res_model">vagirest.material.request</field>
+
+        <field name="view_mode">tree,form</field>
+
+    </record>
+
+
+    <record id="action_vagirest_warehouse_delivery" model="ir.actions.act_window">
+
+        <field name="name">F04 - تحویل کالا</field>
+
+        <field name="res_model">vagirest.warehouse.delivery</field>
+
+        <field name="view_mode">tree,form</field>
+
+    </record>
+
+
+    <!-- ================================================= -->
+    <!-- MENUS                                             -->
+    <!-- ================================================= -->
+
+    <menuitem id="menu_vagirest_warehouse_forms_root" name="فرم‌های انبار" sequence="50" groups="base.group_user"/>
+
+    <menuitem id="menu_vagirest_material_request" name="F01 - درخواست کالا" parent="menu_vagirest_warehouse_forms_root" action="action_vagirest_material_request" sequence="10" groups="base.group_user"/>
+
+    <menuitem id="menu_vagirest_warehouse_delivery" name="F04 - تحویل کالا" parent="menu_vagirest_warehouse_forms_root" action="action_vagirest_warehouse_delivery" sequence="20" groups="base.group_user"/>
+
+</odoo>

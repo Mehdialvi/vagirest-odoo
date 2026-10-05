@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+receipt_personal,Customer receipts personal,model_vagirest_customer_receipt,vagirest_native_dashboard.group_personal_dashboard,1,1,1,0
+receipt_manager,Customer receipts manager,model_vagirest_customer_receipt,sales_team.group_sale_manager,1,1,1,1
+balance_personal,Customer balance personal,model_vagirest_customer_balance,vagirest_native_dashboard.group_personal_dashboard,1,0,0,0
+balance_manager,Customer balance manager,model_vagirest_customer_balance,sales_team.group_sale_manager,1,1,1,1
+balance_line_manager,Customer balance entries manager,model_vagirest_customer_balance_line,sales_team.group_sale_manager,1,1,1,1

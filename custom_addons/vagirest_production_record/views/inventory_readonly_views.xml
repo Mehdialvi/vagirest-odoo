@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_vagirest_stock_quant_readonly_tree"
+            model="ir.ui.view">
+        <field name="name">
+            vagirest.stock.quant.readonly.tree
+        </field>
+        <field name="model">stock.quant</field>
+        <field name="arch" type="xml">
+            <tree string="موجودی فعلی"
+                  create="0"
+                  edit="0"
+                  delete="0"
+                  default_order="location_id, product_id">
+                <field name="location_id"/>
+                <field name="product_id"/>
+                <field name="lot_id"/>
+                <field name="quantity"/>
+                <field name="reserved_quantity"/>
+                <field name="company_id"
+                       optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_vagirest_stock_quant_readonly"
+            model="ir.actions.act_window">
+        <field name="name">موجودی فعلی</field>
+        <field name="res_model">stock.quant</field>
+        <field name="view_mode">tree</field>
+        <field name="view_id"
+               ref="view_vagirest_stock_quant_readonly_tree"/>
+        <field name="domain">
+            [('location_id.usage', '=', 'internal')]
+        </field>
+        <field name="context">
+            {
+                'create': False,
+                'edit': False,
+                'delete': False
+            }
+        </field>
+    </record>
+
+    <record id="view_vagirest_stock_lot_readonly_tree"
+            model="ir.ui.view">
+        <field name="name">
+            vagirest.stock.lot.readonly.tree
+        </field>
+        <field name="model">stock.lot</field>
+        <field name="arch" type="xml">
+            <tree string="سری ساخت‌ها"
+                  create="0"
+                  edit="0"
+                  delete="0"
+                  default_order="id desc">
+                <field name="name"/>
+                <field name="product_id"/>
+                <field name="company_id"
+                       optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_vagirest_stock_lot_readonly"
+            model="ir.actions.act_window">
+        <field name="name">سری ساخت‌ها</field>
+        <field name="res_model">stock.lot</field>
+        <field name="view_mode">tree</field>
+        <field name="view_id"
+               ref="view_vagirest_stock_lot_readonly_tree"/>
+        <field name="context">
+            {
+                'create': False,
+                'edit': False,
+                'delete': False
+            }
+        </field>
+    </record>
+
+    <record id="view_vagirest_stock_picking_readonly_tree"
+            model="ir.ui.view">
+        <field name="name">
+            vagirest.stock.picking.readonly.tree
+        </field>
+        <field name="model">stock.picking</field>
+        <field name="arch" type="xml">
+            <tree string="انتقالات"
+                  create="0"
+                  edit="0"
+                  delete="0"
+                  default_order="id desc">
+                <field name="name"/>
+                <field name="picking_type_id"/>
+                <field name="origin"/>
+                <field name="location_id"/>
+                <field name="location_dest_id"/>
+                <field name="scheduled_date"/>
+                <field name="date_done"/>
+                <field name="state"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_vagirest_stock_picking_readonly"
+            model="ir.actions.act_window">
+        <field name="name">انتقالات</field>
+        <field name="res_model">stock.picking</field>
+        <field name="view_mode">tree</field>
+        <field name="view_id"
+               ref="view_vagirest_stock_picking_readonly_tree"/>
+        <field name="context">
+            {
+                'create': False,
+                'edit': False,
+                'delete': False
+            }
+        </field>
+    </record>
+
+    <record id="view_vagirest_move_line_readonly_tree"
+            model="ir.ui.view">
+        <field name="name">
+            vagirest.stock.move.line.readonly.tree
+        </field>
+        <field name="model">stock.move.line</field>
+        <field name="arch" type="xml">
+            <tree string="تاریخچه جابجایی‌ها"
+                  create="0"
+                  edit="0"
+                  delete="0"
+                  default_order="date desc, id desc">
+                <field name="date"/>
+                <field name="picking_id"/>
+                <field name="product_id"/>
+                <field name="lot_id"/>
+                <field name="location_id"/>
+                <field name="location_dest_id"/>
+                <field name="quantity"/>
+                <field name="company_id"
+                       optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_vagirest_move_line_readonly"
+            model="ir.actions.act_window">
+        <field name="name">تاریخچه جابجایی‌ها</field>
+        <field name="res_model">stock.move.line</field>
+        <field name="view_mode">tree</field>
+        <field name="view_id"
+               ref="view_vagirest_move_line_readonly_tree"/>
+        <field name="context">
+            {
+                'create': False,
+                'edit': False,
+                'delete': False
+            }
+        </field>
+    </record>
+
+    <menuitem id="menu_vagirest_inventory_readonly"
+              name="مشاهده انبار"
+              parent="menu_vagirest_root"
+              sequence="30"
+              groups="vagirest_production_record.group_vagirest_inventory_viewer"/>
+
+    <menuitem id="menu_vagirest_stock_quant_readonly"
+              name="موجودی فعلی"
+              parent="menu_vagirest_inventory_readonly"
+              action="action_vagirest_stock_quant_readonly"
+              sequence="10"
+              groups="vagirest_production_record.group_vagirest_inventory_viewer"/>
+
+    <menuitem id="menu_vagirest_stock_lot_readonly"
+              name="سری ساخت‌ها"
+              parent="menu_vagirest_inventory_readonly"
+              action="action_vagirest_stock_lot_readonly"
+              sequence="20"
+              groups="vagirest_production_record.group_vagirest_inventory_viewer"/>
+
+    <menuitem id="menu_vagirest_stock_picking_readonly"
+              name="انتقالات"
+              parent="menu_vagirest_inventory_readonly"
+              action="action_vagirest_stock_picking_readonly"
+              sequence="30"
+              groups="vagirest_production_record.group_vagirest_inventory_viewer"/>
+
+    <menuitem id="menu_vagirest_move_line_readonly"
+              name="تاریخچه جابجایی‌ها"
+              parent="menu_vagirest_inventory_readonly"
+              action="action_vagirest_move_line_readonly"
+              sequence="40"
+              groups="vagirest_production_record.group_vagirest_inventory_viewer"/>
+</odoo>

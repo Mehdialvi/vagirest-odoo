@@ -1,0 +1,99 @@
+<odoo>
+  <record id="receipt_tree" model="ir.ui.view">
+    <field name="name">vagirest.customer.receipt.tree</field>
+    <field name="model">vagirest.customer.receipt</field>
+    <field name="arch" type="xml"><tree decoration-success="state == 'matched'" decoration-muted="state == 'rejected'">
+      <field name="payment_date_jalali"/>
+      <field name="partner_id"/>
+      <field name="reference"/>
+      <field name="amount"/>
+      <field name="currency_id"/>
+      <field name="payment_method"/>
+      <field name="order_id"/>
+      <field name="state"/>
+      <field name="eligible_for_collection" optional="hide"/>
+      <field name="create_uid" optional="hide"/>
+      <field name="company_id" groups="base.group_multi_company"/>
+    </tree></field>
+  </record>
+  <record id="receipt_form" model="ir.ui.view">
+    <field name="name">vagirest.customer.receipt.form</field>
+    <field name="model">vagirest.customer.receipt</field>
+    <field name="arch" type="xml"><form>
+      <header>
+        <button name="action_match" type="object" string="تطبیق با گردش بانک" class="oe_highlight" groups="sales_team.group_sale_manager" invisible="state != 'pending'"/>
+        <button name="action_reject" type="object" string="رد رسید" groups="sales_team.group_sale_manager" invisible="state != 'pending'"/>
+        <button name="action_reset" type="object" string="بازگشت به انتظار تطبیق" groups="sales_team.group_sale_manager" invisible="state == 'pending'"/>
+        <field name="state" widget="statusbar"/>
+      </header>
+      <sheet>
+        <group>
+          <group>
+            <field name="company_id" readonly="state != 'pending'"/>
+            <field name="partner_id" readonly="state != 'pending'" domain="[('parent_id', '=', False)]"/>
+            <field name="payment_date" invisible="True"/>
+            <field name="payment_date_jalali" readonly="state != 'pending'" placeholder="1405/07/09" required="True"/>
+            <field name="reference" readonly="state != 'pending'"/>
+          </group>
+          <group>
+            <field name="currency_id" readonly="state != 'pending'"/>
+            <field name="amount" readonly="state != 'pending'"/>
+            <field name="payment_method" readonly="state != 'pending'"/>
+            <field name="order_id" readonly="state != 'pending'" domain="[('company_id', '=', company_id), ('currency_id', '=', currency_id), ('partner_id', 'child_of', partner_id), ('state', '!=', 'cancel')]"/>
+          </group>
+        </group>
+        <p>مبلغ را در واحد پول انتخاب‌شده وارد کنید؛ IRR یعنی ریال. رسید ارسالی تا بررسی گردش بانک، وصول تأییدشده محسوب نمی‌شود.</p>
+        <group string="رسید و توضیحات">
+          <field name="attachment_ids" widget="many2many_binary" readonly="state != 'pending'"/>
+          <field name="note" readonly="state != 'pending'"/>
+        </group>
+        <group string="بررسی گردش بانک" groups="sales_team.group_sale_manager">
+          <field name="bank_line_id" readonly="state != 'pending'" options="{'no_create': True, 'no_open': True}" domain="[('company_id', '=', company_id), ('amount', '=', amount), ('move_id.state', '=', 'posted')]"/>
+          <field name="bank_date_jalali"/>
+          <field name="bank_amount"/>
+          <field name="bank_reference"/>
+          <field name="review_note" readonly="state != 'pending'"/>
+          <field name="matched_by_id"/>
+          <field name="matched_at"/>
+          <field name="eligible_for_collection"/>
+        </group>
+        <p>تطبیق این رسید صرفاً برای پیگیری و گزارش وصول است؛ مغایرت‌گیری حسابداری بانک را انجام نمی‌دهد.</p>
+      </sheet>
+      <div class="oe_chatter"><field name="message_follower_ids"/><field name="activity_ids"/><field name="message_ids"/></div>
+    </form></field>
+  </record>
+  <record id="receipt_search" model="ir.ui.view">
+    <field name="name">vagirest.customer.receipt.search</field>
+    <field name="model">vagirest.customer.receipt</field>
+    <field name="arch" type="xml"><search>
+      <field name="partner_id"/><field name="reference"/><field name="order_id"/>
+      <filter name="pending" string="در انتظار تطبیق" domain="[('state', '=', 'pending')]"/>
+      <filter name="matched" string="تطبیق معتبر" domain="[('eligible_for_collection', '=', True)]"/>
+      <group expand="0" string="گروه‌بندی">
+        <filter name="customer" string="مشتری" context="{'group_by': 'partner_id'}"/>
+        <filter name="state" string="وضعیت" context="{'group_by': 'state'}"/>
+        <filter name="currency" string="ارز" context="{'group_by': 'currency_id'}"/>
+      </group>
+    </search></field>
+  </record>
+  <record id="receipt_action" model="ir.actions.act_window">
+    <field name="name">واریزی‌ها و رسیدهای مشتریان</field>
+    <field name="res_model">vagirest.customer.receipt</field>
+    <field name="view_mode">tree,form</field>
+  </record>
+  <menuitem id="receipt_menu" name="واریزی‌ها و رسیدها" parent="spreadsheet_dashboard.spreadsheet_dashboard_menu_root" action="receipt_action" sequence="40" groups="sales_team.group_sale_manager,vagirest_native_dashboard.group_personal_dashboard"/>
+  <record id="partner_receipt_tab" model="ir.ui.view">
+    <field name="name">res.partner.vagirest.receipts</field>
+    <field name="model">res.partner</field>
+    <field name="inherit_id" ref="base.view_partner_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//notebook" position="inside">
+        <page name="vagirest_receipts" string="واریزی‌ها و رسیدها" groups="sales_team.group_sale_manager,vagirest_native_dashboard.group_personal_dashboard" invisible="parent_id">
+          <field name="vagirest_receipt_ids" context="{'default_partner_id': id, 'form_view_ref': 'vagirest_customer_receipts.receipt_form'}">
+            <tree><field name="payment_date_jalali"/><field name="reference"/><field name="amount"/><field name="currency_id"/><field name="order_id"/><field name="state"/></tree>
+          </field>
+        </page>
+      </xpath>
+    </field>
+  </record>
+</odoo>

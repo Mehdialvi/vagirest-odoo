@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_stock_picking_readonly_tree_jalali"
+            model="ir.ui.view">
+        <field name="name">vagirest.stock.picking.readonly.tree.jalali</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id"
+               ref="vagirest_production_record.view_vagirest_stock_picking_readonly_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='scheduled_date']"
+                   position="after">
+                <field name="scheduled_date_jalali"
+                       optional="show"/>
+            </xpath>
+
+            <xpath expr="//field[@name='date_done']"
+                   position="after">
+                <field name="date_done_jalali"
+                       optional="show"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_move_line_readonly_tree_jalali"
+            model="ir.ui.view">
+        <field name="name">vagirest.stock.move.line.readonly.tree.jalali</field>
+        <field name="model">stock.move.line</field>
+        <field name="inherit_id"
+               ref="vagirest_production_record.view_vagirest_move_line_readonly_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='date']"
+                   position="after">
+                <field name="date_jalali"
+                       optional="show"/>
+
+                <field name="expiration_date"
+                       optional="hide"/>
+
+                <field name="expiration_date_jalali"
+                       optional="hide"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_stock_lot_readonly_tree_jalali"
+            model="ir.ui.view">
+        <field name="name">vagirest.stock.lot.readonly.tree.jalali</field>
+        <field name="model">stock.lot</field>
+        <field name="inherit_id"
+               ref="vagirest_production_record.view_vagirest_stock_lot_readonly_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='product_id']"
+                   position="after">
+
+                <field name="create_date"
+                       optional="show"/>
+
+                <field name="create_date_jalali"
+                       optional="show"/>
+
+                <field name="expiration_date"
+                       optional="hide"/>
+
+                <field name="expiration_date_jalali"
+                       optional="hide"/>
+
+                <field name="use_date"
+                       optional="hide"/>
+
+                <field name="use_date_jalali"
+                       optional="hide"/>
+
+                <field name="removal_date"
+                       optional="hide"/>
+
+                <field name="removal_date_jalali"
+                       optional="hide"/>
+
+                <field name="alert_date"
+                       optional="hide"/>
+
+                <field name="alert_date_jalali"
+                       optional="hide"/>
+
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>

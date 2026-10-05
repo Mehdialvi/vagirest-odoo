@@ -1,0 +1,71 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<odoo>
+
+    <record id="view_production_record_tree_jalali" model="ir.ui.view">
+        <field name="name">vagirest.production.record.tree.jalali</field>
+
+        <field name="model">vagirest.production.record</field>
+
+        <field name="inherit_id" ref="vagirest_production_record.view_vagirest_production_record_tree"/>
+
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='production_date']" position="after">
+                <field name="production_date_jalali" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+
+
+    <record id="view_production_record_form_jalali" model="ir.ui.view">
+        <field name="name">vagirest.production.record.form.jalali</field>
+
+        <field name="model">vagirest.production.record</field>
+
+        <field name="inherit_id" ref="vagirest_production_record.view_vagirest_production_record_form"/>
+
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='production_date']" position="after">
+                <field name="production_date_jalali" readonly="1"/>
+            </xpath>
+        </field>
+    </record>
+
+
+    <record id="view_qc_record_tree_jalali" model="ir.ui.view">
+        <field name="name">vagirest.qc.record.tree.jalali</field>
+
+        <field name="model">vagirest.qc.record</field>
+
+        <field name="inherit_id" ref="vagirest_production_record.view_vagirest_qc_record_tree"/>
+
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='production_date']" position="after">
+                <field name="production_date_jalali" optional="show"/>
+            </xpath>
+
+            <xpath expr="//field[@name='decision_date']" position="after">
+                <field name="decision_date_jalali" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+
+
+    <record id="view_qc_record_form_jalali" model="ir.ui.view">
+        <field name="name">vagirest.qc.record.form.jalali</field>
+
+        <field name="model">vagirest.qc.record</field>
+
+        <field name="inherit_id" ref="vagirest_production_record.view_vagirest_qc_record_form"/>
+
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='production_date']" position="after">
+                <field name="production_date_jalali" readonly="1"/>
+            </xpath>
+
+            <xpath expr="//field[@name='decision_date']" position="after">
+                <field name="decision_date_jalali" readonly="1"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

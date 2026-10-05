@@ -1,0 +1,123 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<odoo>
+
+    <!-- ============================= -->
+    <!-- F01 - درخواست کالا از انبار -->
+    <!-- ============================= -->
+
+    <record id="view_f01_form_jalali" model="ir.ui.view">
+        <field name="name">vagirest.material.request.form.jalali</field>
+        <field name="model">vagirest.material.request</field>
+        <field name="inherit_id" ref="vagirest_inventory_qms.view_vagirest_material_request_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='request_date']" position="replace">
+                <field name="request_date_jalali" string="تاریخ درخواست شمسی" placeholder="1405/07/06" readonly="state != 'draft'"/>
+            </xpath>
+
+            <xpath expr="//field[@name='warehouse_received_at']" position="replace">
+                <field name="warehouse_received_at_jalali" string="زمان دریافت در انبار شمسی" readonly="1"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_f01_tree_jalali" model="ir.ui.view">
+        <field name="name">vagirest.material.request.tree.jalali</field>
+        <field name="model">vagirest.material.request</field>
+        <field name="inherit_id" ref="vagirest_inventory_qms.view_vagirest_material_request_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='request_date']" position="replace">
+                <field name="request_date_jalali" string="تاریخ شمسی"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <!-- ============================================ -->
+    <!-- F04 - فرم برگه تحویل و مجوز خروج انبار -->
+    <!-- ============================================ -->
+
+    <record id="view_f04_form_jalali" model="ir.ui.view">
+        <field name="name">vagirest.warehouse.delivery.form.jalali</field>
+        <field name="model">vagirest.warehouse.delivery</field>
+        <field name="inherit_id" ref="vagirest_inventory_qms.view_vagirest_warehouse_delivery_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='delivery_date']" position="replace">
+                <field name="delivery_date_jalali" string="تاریخ تحویل شمسی" placeholder="1405/07/06" readonly="state != 'draft'"/>
+            </xpath>
+
+            <xpath expr="//field[@name='finalized_at']" position="replace">
+                <field name="finalized_at_jalali" string="زمان نهایی‌سازی شمسی" readonly="1"/>
+            </xpath>
+
+            <xpath expr="//field[@name='reversed_at']" position="replace">
+                <field name="reversed_at_jalali" string="زمان برگشت شمسی" readonly="1"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_f04_tree_jalali" model="ir.ui.view">
+        <field name="name">vagirest.warehouse.delivery.tree.jalali</field>
+        <field name="model">vagirest.warehouse.delivery</field>
+        <field name="inherit_id" ref="vagirest_inventory_qms.view_vagirest_warehouse_delivery_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='delivery_date']" position="replace">
+                <field name="delivery_date_jalali" string="تاریخ شمسی"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <!-- ================================= -->
+    <!-- F02 - رسید مواد اولیه / بسته‌بندی -->
+    <!-- ================================= -->
+
+    <record id="view_f02_form_jalali" model="ir.ui.view">
+        <field name="name">vagirest.raw.material.receipt.form.jalali</field>
+        <field name="model">vagirest.raw.material.receipt</field>
+        <field name="inherit_id" ref="vagirest_inventory_qms.view_vagirest_raw_material_receipt_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='receipt_date']" position="replace">
+                <field name="receipt_date_jalali" string="تاریخ رسید شمسی" placeholder="1405/07/06" readonly="state != 'draft'"/>
+            </xpath>
+
+            <xpath expr="//field[@name='delivery_datetime']" position="replace">
+                <field name="delivery_datetime_jalali" string="زمان تحویل شمسی" readonly="1"/>
+            </xpath>
+
+            <xpath expr="//field[@name='qc_decision_date']" position="replace">
+                <field name="qc_decision_date_jalali" string="زمان تصمیم QC شمسی" readonly="1"/>
+            </xpath>
+
+            <xpath expr="//field[@name='last_correction_date']" position="replace">
+                <field name="last_correction_date_jalali" string="زمان آخرین اصلاح شمسی" readonly="1"/>
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_f02_tree_jalali" model="ir.ui.view">
+        <field name="name">vagirest.raw.material.receipt.tree.jalali</field>
+        <field name="model">vagirest.raw.material.receipt</field>
+        <field name="inherit_id" ref="vagirest_inventory_qms.view_vagirest_raw_material_receipt_tree"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//field[@name='receipt_date']" position="replace">
+                <field name="receipt_date_jalali" string="تاریخ شمسی"/>
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>

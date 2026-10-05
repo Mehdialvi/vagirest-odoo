@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="seq_vagirest_raw_material_receipt" model="ir.sequence">
+        <field name="name">رسید مواد اولیه F02</field>
+        <field name="code">vagirest.raw.material.receipt</field>
+        <field name="prefix">F02/%(year)s/</field>
+        <field name="padding">5</field>
+        <field name="company_id" eval="False"/>
+    </record>
+</odoo>

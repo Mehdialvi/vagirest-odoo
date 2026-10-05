@@ -1,0 +1,683 @@
+from odoo import api, fields, models, _
+from odoo.exceptions import UserError
+from odoo.tools.float_utils import float_compare
+
+
+class VagirestReworkRecord(models.Model):
+    _name = "vagirest.rework.record"
+    _description = "VAGIREST Rework Record"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "rework_date desc, id desc"
+
+    name = fields.Char(
+        string="Rework Number",
+        default="New",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    rework_date = fields.Date(
+        string="Rework Date",
+        default=fields.Date.context_today,
+        required=True,
+        tracking=True,
+    )
+
+    operator_id = fields.Many2one(
+        "res.users",
+        string="Operator",
+        readonly=True,
+        tracking=True,
+    )
+
+    source_qc_line_id = fields.Many2one(
+        "vagirest.qc.record.line",
+        string="Source QC Line",
+        readonly=True,
+        copy=False,
+        ondelete="restrict",
+    )
+
+    source_qc_record_id = fields.Many2one(
+        "vagirest.qc.record",
+        string="Source QC Record",
+        related="source_qc_line_id.qc_record_id",
+        store=True,
+        readonly=True,
+    )
+
+    production_record_id = fields.Many2one(
+        "vagirest.production.record",
+        string="Production Record",
+        related="source_qc_line_id.qc_record_id.production_record_id",
+        store=True,
+        readonly=True,
+    )
+
+    parent_rework_id = fields.Many2one(
+        "vagirest.rework.record",
+        string="Previous Rework",
+        readonly=True,
+        copy=False,
+    )
+
+    rework_round = fields.Integer(
+        string="Rework Round",
+        default=1,
+        readonly=True,
+        copy=False,
+    )
+
+    product_id = fields.Many2one(
+        "product.product",
+        string="Product",
+        required=True,
+        readonly=True,
+        tracking=True,
+    )
+
+    lot_id = fields.Many2one(
+        "stock.lot",
+        string="Lot / Batch",
+        required=True,
+        readonly=True,
+        tracking=True,
+    )
+
+    quantity = fields.Float(
+        string="Quantity in Rework",
+        required=True,
+        readonly=True,
+        tracking=True,
+    )
+
+    available_rework_qty = fields.Float(
+        string="Available in Rework",
+        compute="_compute_available_rework_qty",
+        readonly=True,
+    )
+
+    corrected_qty = fields.Float(
+        string="Corrected Quantity",
+        tracking=True,
+    )
+
+    correction_note = fields.Text(
+        string="Correction Note",
+        tracking=True,
+    )
+
+    return_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Return to QC Transfer",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    rework_qc_record_id = fields.Many2one(
+        "vagirest.rework.qc.record",
+        string="Rework QC Record",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Waiting for Correction"),
+            ("submitted_to_qc", "Sent to QC"),
+            ("done", "QC Done"),
+            ("cancelled", "Cancelled"),
+        ],
+        default="draft",
+        required=True,
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        sequence = self.env["ir.sequence"].with_company(self.env.company)
+        for vals in vals_list:
+            if vals.get("name", "New") == "New":
+                vals["name"] = sequence.next_by_code(
+                    "vagirest.rework.record"
+                ) or "New"
+        return super().create(vals_list)
+
+    @api.depends("product_id", "lot_id", "state")
+    def _compute_available_rework_qty(self):
+        Quant = self.env["stock.quant"].sudo().with_company(self.env.company)
+
+        for record in self:
+            if not record.product_id or not record.lot_id:
+                record.available_rework_qty = 0.0
+                continue
+
+            quants = Quant.search([
+                ("company_id", "=", self.env.company.id),
+                ("location_id", "=", 76),
+                ("product_id", "=", record.product_id.id),
+                ("lot_id", "=", record.lot_id.id),
+            ])
+
+            record.available_rework_qty = sum(
+                quants.mapped("quantity")
+            ) - sum(
+                quants.mapped("reserved_quantity")
+            )
+
+    def _get_or_create_return_picking_type(self):
+        PickingType = self.env["stock.picking.type"].sudo().with_company(
+            self.env.company
+        )
+
+        picking_type = PickingType.search([
+            ("warehouse_id", "=", 3),
+            ("code", "=", "internal"),
+            ("default_location_src_id", "=", 76),
+            ("default_location_dest_id", "=", 40),
+            "|",
+            ("sequence_code", "=", "RWQ"),
+            ("name", "=", "Rework Completed to Input QC"),
+        ], limit=1)
+
+        if picking_type:
+            if not picking_type.active:
+                picking_type.active = True
+            return picking_type
+
+        return PickingType.create({
+            "name": "Rework Completed to Input QC",
+            "code": "internal",
+            "warehouse_id": 3,
+            "default_location_src_id": 76,
+            "default_location_dest_id": 40,
+            "sequence_code": "RWQ",
+            "company_id": self.env.company.id,
+        })
+
+    def _create_transfer(self, source_location_id, dest_location_id, picking_type, quantity):
+        self.ensure_one()
+
+        Picking = self.env["stock.picking"].sudo().with_company(self.env.company)
+        Move = self.env["stock.move"].sudo().with_company(self.env.company)
+        MoveLine = self.env["stock.move.line"].sudo().with_company(self.env.company)
+
+        picking = Picking.create({
+            "picking_type_id": picking_type.id,
+            "location_id": source_location_id,
+            "location_dest_id": dest_location_id,
+            "origin": self.name,
+            "company_id": self.env.company.id,
+        })
+
+        move = Move.create({
+            "name": _("Rework Completed - %s") % self.product_id.display_name,
+            "origin": self.name,
+            "product_id": self.product_id.id,
+            "product_uom_qty": quantity,
+            "product_uom": self.product_id.uom_id.id,
+            "location_id": source_location_id,
+            "location_dest_id": dest_location_id,
+            "picking_id": picking.id,
+            "company_id": self.env.company.id,
+        })
+
+        picking.action_confirm()
+
+        MoveLine.create({
+            "move_id": move.id,
+            "picking_id": picking.id,
+            "company_id": self.env.company.id,
+            "product_id": self.product_id.id,
+            "product_uom_id": self.product_id.uom_id.id,
+            "quantity": quantity,
+            "picked": True,
+            "lot_id": self.lot_id.id,
+            "location_id": source_location_id,
+            "location_dest_id": dest_location_id,
+        })
+
+        validation_result = picking.with_context(
+            cancel_backorder=True
+        ).button_validate()
+
+        if picking.state != "done":
+            if isinstance(validation_result, dict):
+                raise UserError(
+                    _("The rework return transfer requires an unexpected wizard.")
+                )
+            raise UserError(_("The rework return transfer was not completed."))
+
+        return picking
+
+    def action_submit_to_qc(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record.group_vagirest_production_operator"
+        ):
+            raise UserError(_("You do not have permission to submit rework."))
+
+        for record in self:
+            if record.state != "draft":
+                raise UserError(_("Only waiting rework records can be submitted."))
+
+            if not record.product_id or not record.lot_id:
+                raise UserError(_("Product and Lot are required."))
+
+            if record.corrected_qty <= 0:
+                raise UserError(_("Corrected Quantity must be greater than zero."))
+
+            rounding = record.product_id.uom_id.rounding or 0.01
+
+            if float_compare(
+                record.corrected_qty,
+                record.quantity,
+                precision_rounding=rounding,
+            ) != 0:
+                raise UserError(
+                    _(
+                        "For phase 1, Corrected Quantity must equal the full Rework Quantity.\n"
+                        "This prevents a remaining batch from getting lost.\n"
+                        "Rework Quantity: %s\nCorrected Quantity: %s"
+                    )
+                    % (record.quantity, record.corrected_qty)
+                )
+
+            record._compute_available_rework_qty()
+
+            if float_compare(
+                record.available_rework_qty,
+                record.corrected_qty,
+                precision_rounding=rounding,
+            ) < 0:
+                raise UserError(
+                    _(
+                        "Not enough available stock in Rework for this Lot.\n"
+                        "Available: %s\nRequested: %s"
+                    )
+                    % (record.available_rework_qty, record.corrected_qty)
+                )
+
+            picking_type = record._get_or_create_return_picking_type()
+
+            picking = record._create_transfer(
+                76,
+                40,
+                picking_type,
+                record.corrected_qty,
+            )
+
+            qc_record = self.env["vagirest.rework.qc.record"].sudo().with_company(
+                self.env.company
+            ).create({
+                "rework_record_id": record.id,
+                "quantity": record.corrected_qty,
+            })
+
+            record.write({
+                "operator_id": self.env.user.id,
+                "return_picking_id": picking.id,
+                "rework_qc_record_id": qc_record.id,
+                "state": "submitted_to_qc",
+            })
+
+            record.message_post(
+                body=_(
+                    "Rework completed and sent back to input-QC.<br/>"
+                    "Transfer: %s<br/>"
+                    "Rework QC: %s<br/>"
+                    "Lot / Batch: %s"
+                )
+                % (
+                    picking.display_name,
+                    qc_record.display_name,
+                    record.lot_id.name,
+                )
+            )
+
+        return True
+
+    def action_cancel(self):
+        for record in self:
+            if record.state != "draft":
+                raise UserError(_("Only waiting rework records can be cancelled."))
+            record.state = "cancelled"
+        return True
+
+
+class VagirestReworkQCRecord(models.Model):
+    _name = "vagirest.rework.qc.record"
+    _description = "VAGIREST Rework QC Record"
+    _order = "id desc"
+
+    name = fields.Char(
+        string="Rework QC Number",
+        default="New",
+        readonly=True,
+        copy=False,
+    )
+
+    rework_record_id = fields.Many2one(
+        "vagirest.rework.record",
+        string="Rework Record",
+        required=True,
+        readonly=True,
+        ondelete="restrict",
+    )
+
+    product_id = fields.Many2one(
+        related="rework_record_id.product_id",
+        store=True,
+        readonly=True,
+    )
+
+    lot_id = fields.Many2one(
+        related="rework_record_id.lot_id",
+        store=True,
+        readonly=True,
+    )
+
+    production_record_id = fields.Many2one(
+        related="rework_record_id.production_record_id",
+        store=True,
+        readonly=True,
+    )
+
+    quantity = fields.Float(
+        string="Quantity Returned from Rework",
+        required=True,
+        readonly=True,
+    )
+
+    approved_qty = fields.Float(string="Approved")
+    rework_qty = fields.Float(string="Rework Again")
+    rejected_qty = fields.Float(string="Rejected")
+
+    inspector_id = fields.Many2one(
+        "res.users",
+        string="QC Inspector",
+        readonly=True,
+        copy=False,
+    )
+
+    decision_date = fields.Datetime(
+        string="Decision Date",
+        readonly=True,
+        copy=False,
+    )
+
+    note = fields.Text(string="QC Notes")
+
+    approved_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Approved Transfer",
+        readonly=True,
+        copy=False,
+    )
+
+    rework_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Rework Transfer",
+        readonly=True,
+        copy=False,
+    )
+
+    rejected_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Rejected Transfer",
+        readonly=True,
+        copy=False,
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("done", "Decision Submitted"),
+        ],
+        default="draft",
+        required=True,
+        readonly=True,
+        copy=False,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        sequence = self.env["ir.sequence"].with_company(self.env.company)
+        for vals in vals_list:
+            if vals.get("name", "New") == "New":
+                vals["name"] = sequence.next_by_code(
+                    "vagirest.rework.qc.record"
+                ) or "New"
+        return super().create(vals_list)
+
+    def _get_qc_picking_type(self, picking_type_id, source_location_id, dest_location_id):
+        picking_type = self.env["stock.picking.type"].sudo().with_company(
+            self.env.company
+        ).with_context(active_test=False).browse(picking_type_id).exists()
+
+        if not picking_type:
+            raise UserError(_("Operation Type %s was not found.") % picking_type_id)
+
+        if not picking_type.active:
+            raise UserError(_("Operation Type %s is archived.") % picking_type.display_name)
+
+        if picking_type.default_location_src_id.id != source_location_id:
+            raise UserError(_("The source location of %s is incorrect.") % picking_type.display_name)
+
+        if picking_type.default_location_dest_id.id != dest_location_id:
+            raise UserError(_("The destination location of %s is incorrect.") % picking_type.display_name)
+
+        return picking_type
+
+    def _create_qc_transfer(self, picking_type_id, dest_location_id, quantity, label):
+        self.ensure_one()
+
+        if quantity <= 0:
+            return False
+
+        picking_type = self._get_qc_picking_type(
+            picking_type_id,
+            40,
+            dest_location_id,
+        )
+
+        Picking = self.env["stock.picking"].sudo().with_company(self.env.company)
+        Move = self.env["stock.move"].sudo().with_company(self.env.company)
+        MoveLine = self.env["stock.move.line"].sudo().with_company(self.env.company)
+
+        picking = Picking.create({
+            "picking_type_id": picking_type.id,
+            "location_id": 40,
+            "location_dest_id": dest_location_id,
+            "origin": "%s / %s" % (self.name, self.rework_record_id.name),
+            "company_id": self.env.company.id,
+        })
+
+        move = Move.create({
+            "name": "%s - %s" % (label, self.product_id.display_name),
+            "origin": self.name,
+            "product_id": self.product_id.id,
+            "product_uom_qty": quantity,
+            "product_uom": self.product_id.uom_id.id,
+            "location_id": 40,
+            "location_dest_id": dest_location_id,
+            "picking_id": picking.id,
+            "company_id": self.env.company.id,
+        })
+
+        picking.action_confirm()
+
+        MoveLine.create({
+            "move_id": move.id,
+            "picking_id": picking.id,
+            "company_id": self.env.company.id,
+            "product_id": self.product_id.id,
+            "product_uom_id": self.product_id.uom_id.id,
+            "quantity": quantity,
+            "picked": True,
+            "lot_id": self.lot_id.id,
+            "location_id": 40,
+            "location_dest_id": dest_location_id,
+        })
+
+        validation_result = picking.with_context(
+            cancel_backorder=True
+        ).button_validate()
+
+        if picking.state != "done":
+            if isinstance(validation_result, dict):
+                raise UserError(
+                    _("The %s transfer requires an unexpected wizard.") % label
+                )
+            raise UserError(_("The %s transfer was not completed.") % label)
+
+        return picking
+
+    def _validate_decision(self):
+        self.ensure_one()
+
+        if self.state != "draft":
+            raise UserError(_("Only draft Rework QC records can be submitted."))
+
+        if not self.product_id or not self.lot_id:
+            raise UserError(_("Product and Lot are required."))
+
+        quantities = [self.approved_qty, self.rework_qty, self.rejected_qty]
+
+        if any(qty < 0 for qty in quantities):
+            raise UserError(_("QC quantities cannot be negative."))
+
+        total_decided = self.approved_qty + self.rework_qty + self.rejected_qty
+        rounding = self.product_id.uom_id.rounding or 0.01
+
+        if float_compare(
+            total_decided,
+            self.quantity,
+            precision_rounding=rounding,
+        ) != 0:
+            raise UserError(
+                _(
+                    "Approved + Rework + Rejected must equal the returned quantity.\n"
+                    "Returned: %s\nDecided: %s"
+                )
+                % (self.quantity, total_decided)
+            )
+
+        Quant = self.env["stock.quant"].sudo().with_company(self.env.company)
+        quants = Quant.search([
+            ("company_id", "=", self.env.company.id),
+            ("location_id", "=", 40),
+            ("product_id", "=", self.product_id.id),
+            ("lot_id", "=", self.lot_id.id),
+        ])
+
+        available = sum(quants.mapped("quantity")) - sum(
+            quants.mapped("reserved_quantity")
+        )
+
+        if float_compare(
+            available,
+            self.quantity,
+            precision_rounding=rounding,
+        ) < 0:
+            raise UserError(
+                _(
+                    "There is not enough available stock in input-QC for this Lot.\n"
+                    "Available: %s\nRequired: %s"
+                )
+                % (available, self.quantity)
+            )
+
+    def action_submit_decision(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record.group_vagirest_qc_manager"
+        ):
+            raise UserError(_("You do not have permission to submit Rework QC."))
+
+        for record in self:
+            record._validate_decision()
+
+            approved_picking = record._create_qc_transfer(
+                51,
+                41,
+                record.approved_qty,
+                _("Rework QC Approved"),
+            )
+            rework_picking = record._create_qc_transfer(
+                52,
+                76,
+                record.rework_qty,
+                _("Rework QC Rework"),
+            )
+            rejected_picking = record._create_qc_transfer(
+                53,
+                77,
+                record.rejected_qty,
+                _("Rework QC Rejected"),
+            )
+
+            vals = {
+                "state": "done",
+                "inspector_id": self.env.user.id,
+                "decision_date": fields.Datetime.now(),
+            }
+
+            if approved_picking:
+                vals["approved_picking_id"] = approved_picking.id
+            if rework_picking:
+                vals["rework_picking_id"] = rework_picking.id
+            if rejected_picking:
+                vals["rejected_picking_id"] = rejected_picking.id
+
+            record.write(vals)
+            record.rework_record_id.write({"state": "done"})
+
+            if record.rework_qty > 0:
+                self.env["vagirest.rework.record"].sudo().with_company(
+                    self.env.company
+                ).create({
+                    "source_qc_line_id": record.rework_record_id.source_qc_line_id.id,
+                    "parent_rework_id": record.rework_record_id.id,
+                    "rework_round": record.rework_record_id.rework_round + 1,
+                    "product_id": record.product_id.id,
+                    "lot_id": record.lot_id.id,
+                    "quantity": record.rework_qty,
+                    "corrected_qty": record.rework_qty,
+                })
+
+        return True
+
+
+class VagirestQCRecordReworkAuto(models.Model):
+    _inherit = "vagirest.qc.record"
+
+    def action_submit_decision(self):
+        result = super().action_submit_decision()
+
+        ReworkRecord = self.env["vagirest.rework.record"].sudo().with_company(
+            self.env.company
+        )
+
+        for record in self:
+            for line in record.line_ids.filtered(lambda l: l.rework_qty > 0):
+                existing = ReworkRecord.search([
+                    ("source_qc_line_id", "=", line.id),
+                    ("parent_rework_id", "=", False),
+                ], limit=1)
+
+                if existing:
+                    continue
+
+                ReworkRecord.create({
+                    "source_qc_line_id": line.id,
+                    "product_id": line.product_id.id,
+                    "lot_id": line.lot_id.id,
+                    "quantity": line.rework_qty,
+                    "corrected_qty": line.rework_qty,
+                })
+
+        return result

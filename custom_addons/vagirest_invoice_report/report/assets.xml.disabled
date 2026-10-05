@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="vagirest_report_assets"
+              name="VAGIREST Report Fonts"
+              inherit_id="web.report_assets_common">
+        <xpath expr="." position="inside">
+            <link rel="stylesheet"
+                  type="text/css"
+                  href="/vagirest_invoice_report/static/src/css/report_fonts.css"/>
+        </xpath>
+    </template>
+</odoo>

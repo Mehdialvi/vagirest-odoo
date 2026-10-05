@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_partner_form_vagirest_crm"
+            model="ir.ui.view">
+
+        <field name="name">res.partner.form.vagirest.crm</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id"
+               ref="base.view_partner_form"/>
+        <field name="priority">30</field>
+
+        <field name="arch"
+               type="xml">
+
+            <xpath expr="//page[@name='internal_notes']/parent::notebook"
+                   position="inside">
+
+                <page name="vagirest_commercial_information"
+                      string="اطلاعات تجاری واژیرست">
+
+                    <group>
+
+                        <group string="طبقه‌بندی مشتری">
+
+                            <field name="vagirest_customer_type"/>
+
+                            <field name="vagirest_commercial_potential"/>
+
+                            <field name="vagirest_preferred_contact"/>
+
+                        </group>
+
+                        <group string="فروش و ارتباط">
+
+                            <field name="vagirest_sales_channel"/>
+
+                            <field name="vagirest_referrer_id"
+                                   options="{
+                                       'no_create_edit': True
+                                   }"/>
+
+                        </group>
+
+                    </group>
+
+                    <group string="محصولات و خدمات موردعلاقه"
+                           col="1">
+
+                        <field name="vagirest_product_interest_ids"
+                               nolabel="1"
+                               widget="many2many_tags"
+                               options="{
+                                   'no_create': True,
+                                   'no_create_edit': True,
+                                   'no_open': True
+                               }"/>
+
+                    </group>
+
+                </page>
+
+            </xpath>
+
+        </field>
+
+    </record>
+
+</odoo>

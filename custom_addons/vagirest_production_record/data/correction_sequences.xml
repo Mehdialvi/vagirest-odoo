@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="1">
+
+    <record id="seq_production_legacy_correction" model="ir.sequence">
+        <field name="name">Production Legacy Correction</field>
+        <field name="code">vagirest.production.legacy.correction</field>
+        <field name="prefix">VPC/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+    <record id="seq_qc_legacy_correction" model="ir.sequence">
+        <field name="name">QC Legacy Correction</field>
+        <field name="code">vagirest.qc.legacy.correction</field>
+        <field name="prefix">VQCC/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+
+    <record id="seq_production_correction_request" model="ir.sequence">
+        <field name="name">Production Correction Request</field>
+        <field name="code">vagirest.production.correction.request</field>
+        <field name="company_id" eval="False"/>
+        <field name="prefix">VCR/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+
+    <record id="seq_qc_correction_request" model="ir.sequence">
+        <field name="name">QC Correction Request</field>
+        <field name="code">vagirest.qc.correction.request</field>
+        <field name="company_id" eval="False"/>
+        <field name="prefix">VQCR/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+
+    <record id="seq_rework_correction_request" model="ir.sequence">
+        <field name="name">Rework Correction Request</field>
+        <field name="code">vagirest.rework.correction.request</field>
+        <field name="company_id" eval="False"/>
+        <field name="prefix">VRCR/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+    <record id="seq_rework_qc_correction_request" model="ir.sequence">
+        <field name="name">Rework QC Correction Request</field>
+        <field name="code">vagirest.rework.qc.correction.request</field>
+        <field name="company_id" eval="False"/>
+        <field name="prefix">VRQCR/%(year)s/</field>
+        <field name="padding">5</field>
+    </record>
+
+</odoo>

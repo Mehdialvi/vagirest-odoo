@@ -1,0 +1,28 @@
+@font-face {
+    font-family: 'BNazanin';
+    src: url('/vagirest_invoice_report/static/src/fonts/BNazanin.ttf') format('truetype');
+    font-style: normal;
+    font-weight: normal;
+}
+
+@font-face {
+    font-family: 'BNazaninBold';
+    src: url('/vagirest_invoice_report/static/src/fonts/BNazanin-Bold.ttf') format('truetype');
+    font-style: normal;
+    font-weight: normal;
+}
+
+.vagirest-page,
+.vagirest-page td,
+.vagirest-page span,
+.vagirest-page div {
+    font-family: 'BNazanin', sans-serif !important;
+}
+
+.vagirest-page strong,
+.vagirest-page th,
+.vagirest-page .v-bold,
+.vagirest-page .v-title {
+    font-family: 'BNazaninBold', 'BNazanin', sans-serif !important;
+    font-weight: normal !important;
+}

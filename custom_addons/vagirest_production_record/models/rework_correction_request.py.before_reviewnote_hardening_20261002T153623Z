@@ -1,0 +1,1277 @@
+import json
+
+from odoo import api, fields, models, _
+from odoo.exceptions import UserError
+
+from .correction_workflow import _reverse_done_picking
+
+
+# =====================================================================
+# REWORK CORRECTION REQUEST
+# Operator -> QC / ERP approval
+# =====================================================================
+
+class VagirestReworkCorrectionRequest(models.Model):
+    _name = "vagirest.rework.correction.request"
+    _description = "VAGIREST Rework Correction Request"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "requested_at desc, id desc"
+
+    name = fields.Char(
+        string="Request Number",
+        readonly=True,
+        copy=False,
+        default="New",
+        tracking=True,
+    )
+
+    rework_record_id = fields.Many2one(
+        "vagirest.rework.record",
+        string="Rework Record",
+        required=True,
+        readonly=True,
+        ondelete="restrict",
+        tracking=True,
+    )
+
+    requester_id = fields.Many2one(
+        "res.users",
+        string="Requester",
+        required=True,
+        readonly=True,
+        default=lambda self: self.env.user,
+        tracking=True,
+    )
+
+    requested_at = fields.Datetime(
+        default=fields.Datetime.now,
+        readonly=True,
+        tracking=True,
+    )
+
+    reason = fields.Text(
+        string="Correction Reason",
+        required=True,
+        tracking=True,
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("submitted", "Submitted"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+            ("applied", "Applied"),
+        ],
+        default="draft",
+        required=True,
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    reviewed_by_id = fields.Many2one(
+        "res.users",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    reviewed_at = fields.Datetime(
+        readonly=True,
+        copy=False,
+    )
+
+    review_note = fields.Text(
+        string="Review / Override Note",
+        tracking=True,
+    )
+
+    reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Reversal Transfer",
+        readonly=True,
+        copy=False,
+    )
+
+    old_rework_qc_record_id = fields.Many2one(
+        "vagirest.rework.qc.record",
+        string="Previous Rework QC",
+        readonly=True,
+        copy=False,
+    )
+
+    before_snapshot = fields.Text(
+        readonly=True,
+        copy=False,
+    )
+
+    after_snapshot = fields.Text(
+        readonly=True,
+        copy=False,
+    )
+
+    change_summary = fields.Text(
+        readonly=True,
+        copy=False,
+    )
+
+    applied_at = fields.Datetime(
+        readonly=True,
+        copy=False,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        result = []
+
+        Sequence = self.env["ir.sequence"].sudo()
+
+        for incoming in vals_list:
+            vals = dict(incoming)
+
+            if not vals.get("rework_record_id"):
+                raise UserError(_("Rework Record is required."))
+
+            number = Sequence.next_by_code(
+                "vagirest.rework.correction.request"
+            )
+
+            if not number:
+                raise UserError(
+                    _("Rework Correction Request sequence is missing.")
+                )
+
+            # Anti-spoofing: all audit/system values are forced.
+            vals.update({
+                "name": number,
+                "requester_id": self.env.user.id,
+                "requested_at": fields.Datetime.now(),
+                "state": "draft",
+                "reviewed_by_id": False,
+                "reviewed_at": False,
+                "review_note": False,
+                "reversal_picking_id": False,
+                "old_rework_qc_record_id": False,
+                "before_snapshot": False,
+                "after_snapshot": False,
+                "change_summary": False,
+                "applied_at": False,
+            })
+
+            result.append(vals)
+
+        return super().create(result)
+
+    def _is_approver(self):
+        return (
+            self.env.user.has_group(
+                "vagirest_production_record."
+                "group_vagirest_qc_manager"
+            )
+            or self.env.user.has_group(
+                "vagirest_production_record."
+                "group_vagirest_erp_manager"
+            )
+        )
+
+    def write(self, vals):
+        if (
+            not self.env.su
+            and not self.env.context.get(
+                "allow_rework_request_system_write"
+            )
+        ):
+            protected = {
+                "name",
+                "rework_record_id",
+                "requester_id",
+                "requested_at",
+                "state",
+                "reviewed_by_id",
+                "reviewed_at",
+                "reversal_picking_id",
+                "old_rework_qc_record_id",
+                "before_snapshot",
+                "after_snapshot",
+                "change_summary",
+                "applied_at",
+            }
+
+            if protected.intersection(vals):
+                raise UserError(
+                    _(
+                        "Audit and system fields of a Rework "
+                        "correction request cannot be edited directly."
+                    )
+                )
+
+            if "review_note" in vals and not self._is_approver():
+                raise UserError(
+                    _(
+                        "Only QC or ERP Manager may enter "
+                        "the Review Note."
+                    )
+                )
+
+            for request in self:
+                if request.state != "draft":
+                    extra = set(vals) - {"review_note"}
+
+                    if extra:
+                        raise UserError(
+                            _(
+                                "Submitted Rework correction requests "
+                                "are immutable."
+                            )
+                        )
+
+        return super().write(vals)
+
+    def unlink(self):
+        raise UserError(
+            _(
+                "Rework correction requests cannot be deleted. "
+                "They are part of the audit trail."
+            )
+        )
+
+    def _snapshot(self):
+        self.ensure_one()
+
+        rw = self.rework_record_id.sudo()
+
+        payload = {
+            "rework_id": rw.id,
+            "rework_number": rw.name,
+            "state": rw.state,
+            "rework_date": str(rw.rework_date or ""),
+            "operator_id": rw.operator_id.id if rw.operator_id else False,
+            "product_id": rw.product_id.id if rw.product_id else False,
+            "lot_id": rw.lot_id.id if rw.lot_id else False,
+            "quantity": rw.quantity,
+            "corrected_qty": rw.corrected_qty,
+            "correction_note": rw.correction_note or "",
+            "return_picking_id": (
+                rw.return_picking_id.id
+                if rw.return_picking_id
+                else False
+            ),
+            "rework_qc_record_id": (
+                rw.rework_qc_record_id.id
+                if rw.rework_qc_record_id
+                else False
+            ),
+            "rework_round": rw.rework_round,
+            "parent_rework_id": (
+                rw.parent_rework_id.id
+                if rw.parent_rework_id
+                else False
+            ),
+        }
+
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+
+    def action_submit_request(self):
+        for request in self:
+            if request.state != "draft":
+                raise UserError(
+                    _("Only Draft requests can be submitted.")
+                )
+
+            if not (request.reason or "").strip():
+                raise UserError(
+                    _("Correction Reason is required.")
+                )
+
+            rw = request.rework_record_id
+
+            if rw.state != "submitted_to_qc":
+                raise UserError(
+                    _(
+                        "Only Rework records already sent to "
+                        "Rework QC can be corrected through this request."
+                    )
+                )
+
+            duplicate = self.sudo().search_count([
+                ("id", "!=", request.id),
+                ("rework_record_id", "=", rw.id),
+                ("state", "in", ["submitted", "approved"]),
+            ])
+
+            if duplicate:
+                raise UserError(
+                    _(
+                        "Another open Rework correction request "
+                        "already exists."
+                    )
+                )
+
+            request.with_context(
+                allow_rework_request_system_write=True
+            ).sudo().write({
+                "state": "submitted",
+                "before_snapshot": request._snapshot(),
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>Rework correction request submitted.</b>"
+                    "<br/>Requested by: %s"
+                    "<br/>Reason: %s"
+                )
+                % (
+                    request.requester_id.display_name,
+                    request.reason,
+                )
+            )
+
+        return True
+
+    def _check_approver(self):
+        if not self._is_approver():
+            raise UserError(
+                _(
+                    "Only VAGIREST QC Manager or ERP Manager "
+                    "may approve a Rework correction request."
+                )
+            )
+
+    def action_approve(self):
+        self._check_approver()
+
+        for request in self:
+            if request.state != "submitted":
+                raise UserError(
+                    _("Only Submitted requests can be approved.")
+                )
+
+            is_erp = self.env.user.has_group(
+                "vagirest_production_record."
+                "group_vagirest_erp_manager"
+            )
+
+            if request.requester_id == self.env.user:
+                if not is_erp:
+                    raise UserError(
+                        _(
+                            "A requester cannot approve their own "
+                            "Rework correction request."
+                        )
+                    )
+
+                if not (request.review_note or "").strip():
+                    raise UserError(
+                        _(
+                            "ERP Manager self-approval requires an "
+                            "Override Reason in Review Note."
+                        )
+                    )
+
+            rw = request.rework_record_id.sudo()
+
+            if rw.state != "submitted_to_qc":
+                raise UserError(
+                    _(
+                        "The Rework record is no longer in "
+                        "Sent to QC state."
+                    )
+                )
+
+            rq = rw.rework_qc_record_id
+
+            if not rq:
+                raise UserError(
+                    _("The related Rework QC record was not found.")
+                )
+
+            if rq.state == "done":
+                raise UserError(
+                    _(
+                        "The related Rework QC decision is already Done. "
+                        "Correct the Rework QC decision first."
+                    )
+                )
+
+            if rq.state != "draft":
+                raise UserError(
+                    _(
+                        "The related Rework QC record must be Draft "
+                        "before returning Rework for correction."
+                    )
+                )
+
+            reversal = False
+
+            if rw.return_picking_id:
+                reversal = _reverse_done_picking(
+                    rw,
+                    rw.return_picking_id,
+                    "Rework Submission Reversal",
+                )
+
+            # Keep old Rework-QC permanently as cancelled audit evidence.
+            rq.with_context(
+                allow_rework_qc_workflow_write=True
+            ).sudo().write({
+                "state": "cancelled",
+            })
+
+            rw.with_context(
+                allow_rework_workflow_write=True
+            ).sudo().write({
+                "state": "draft",
+                "return_picking_id": False,
+                "rework_qc_record_id": False,
+                "operator_id": False,
+                "active_rework_correction_request_id": request.id,
+            })
+
+            request.with_context(
+                allow_rework_request_system_write=True
+            ).sudo().write({
+                "state": "approved",
+                "reviewed_by_id": self.env.user.id,
+                "reviewed_at": fields.Datetime.now(),
+                "reversal_picking_id": (
+                    reversal.id if reversal else False
+                ),
+                "old_rework_qc_record_id": rq.id,
+                "change_summary": (
+                    "Rework returned to Draft. "
+                    "Previous Rework-QC cancelled and "
+                    "stock submission reversed."
+                ),
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>Rework correction approved.</b>"
+                    "<br/>Approved by: %s"
+                    "<br/>Rework returned to Draft."
+                )
+                % self.env.user.display_name
+            )
+
+        return True
+
+    def action_reject(self):
+        self._check_approver()
+
+        for request in self:
+            if request.state != "submitted":
+                raise UserError(
+                    _("Only Submitted requests can be rejected.")
+                )
+
+            if not (request.review_note or "").strip():
+                raise UserError(
+                    _("Review Note is required when rejecting.")
+                )
+
+            request.with_context(
+                allow_rework_request_system_write=True
+            ).sudo().write({
+                "state": "rejected",
+                "reviewed_by_id": self.env.user.id,
+                "reviewed_at": fields.Datetime.now(),
+            })
+
+        return True
+
+
+# =====================================================================
+# REWORK RECORD EXTENSION
+# =====================================================================
+
+class VagirestReworkCorrectionRequestLink(models.Model):
+    _inherit = "vagirest.rework.record"
+
+    rework_correction_request_ids = fields.One2many(
+        "vagirest.rework.correction.request",
+        "rework_record_id",
+        string="Correction Requests",
+        readonly=True,
+    )
+
+    active_rework_correction_request_id = fields.Many2one(
+        "vagirest.rework.correction.request",
+        string="Active Correction Request",
+        readonly=True,
+        copy=False,
+        ondelete="restrict",
+    )
+
+    rework_correction_request_count = fields.Integer(
+        compute="_compute_rework_correction_request_count"
+    )
+
+    def _compute_rework_correction_request_count(self):
+        Request = self.env[
+            "vagirest.rework.correction.request"
+        ].sudo()
+
+        for record in self:
+            record.rework_correction_request_count = (
+                Request.search_count([
+                    ("rework_record_id", "=", record.id)
+                ])
+            )
+
+    def action_request_rework_correction(self):
+        self.ensure_one()
+
+        if self.state != "submitted_to_qc":
+            raise UserError(
+                _(
+                    "Correction can only be requested after "
+                    "Rework has been sent to QC."
+                )
+            )
+
+        existing = self.env[
+            "vagirest.rework.correction.request"
+        ].search([
+            ("rework_record_id", "=", self.id),
+            ("requester_id", "=", self.env.user.id),
+            ("state", "=", "draft"),
+        ], limit=1)
+
+        if existing:
+            return {
+                "type": "ir.actions.act_window",
+                "res_model": "vagirest.rework.correction.request",
+                "res_id": existing.id,
+                "view_mode": "form",
+                "target": "current",
+            }
+
+        return {
+            "type": "ir.actions.act_window",
+            "res_model": "vagirest.rework.correction.request",
+            "view_mode": "form",
+            "target": "current",
+            "context": {
+                "default_rework_record_id": self.id,
+            },
+        }
+
+    def action_open_rework_correction_requests(self):
+        self.ensure_one()
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Rework Correction Requests"),
+            "res_model": "vagirest.rework.correction.request",
+            "view_mode": "tree,form",
+            "domain": [
+                ("rework_record_id", "=", self.id)
+            ],
+            "context": {
+                "default_rework_record_id": self.id,
+            },
+        }
+
+    def action_submit_to_qc(self):
+        active_map = {
+            record.id: record.active_rework_correction_request_id
+            for record in self
+            if (
+                record.active_rework_correction_request_id
+                and record.active_rework_correction_request_id.state
+                == "approved"
+            )
+        }
+
+        result = super().action_submit_to_qc()
+
+        for record in self:
+            request = active_map.get(record.id)
+
+            if not request:
+                continue
+
+            request.with_context(
+                allow_rework_request_system_write=True
+            ).sudo().write({
+                "state": "applied",
+                "after_snapshot": request._snapshot(),
+                "applied_at": fields.Datetime.now(),
+                "change_summary": (
+                    (request.change_summary or "")
+                    + "\nCorrected Rework was resubmitted to QC."
+                ),
+            })
+
+            record.with_context(
+                allow_rework_workflow_write=True
+            ).sudo().write({
+                "active_rework_correction_request_id": False,
+            })
+
+        return result
+
+
+# =====================================================================
+# REWORK QC CORRECTION REQUEST
+# QC -> ERP Manager approval
+# =====================================================================
+
+class VagirestReworkQCCorrectionRequest(models.Model):
+    _name = "vagirest.rework.qc.correction.request"
+    _description = "VAGIREST Rework QC Correction Request"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "requested_at desc, id desc"
+
+    name = fields.Char(
+        readonly=True,
+        copy=False,
+        default="New",
+        tracking=True,
+    )
+
+    rework_qc_record_id = fields.Many2one(
+        "vagirest.rework.qc.record",
+        required=True,
+        readonly=True,
+        ondelete="restrict",
+        tracking=True,
+    )
+
+    requester_id = fields.Many2one(
+        "res.users",
+        required=True,
+        readonly=True,
+        default=lambda self: self.env.user,
+        tracking=True,
+    )
+
+    requested_at = fields.Datetime(
+        default=fields.Datetime.now,
+        readonly=True,
+    )
+
+    reason = fields.Text(
+        required=True,
+        tracking=True,
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("submitted", "Submitted"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+            ("applied", "Applied"),
+        ],
+        default="draft",
+        required=True,
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    reviewed_by_id = fields.Many2one(
+        "res.users",
+        readonly=True,
+        copy=False,
+    )
+
+    reviewed_at = fields.Datetime(
+        readonly=True,
+        copy=False,
+    )
+
+    review_note = fields.Text(
+        string="Review / Override Note",
+        tracking=True,
+    )
+
+    approved_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        readonly=True,
+        copy=False,
+    )
+
+    rework_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        readonly=True,
+        copy=False,
+    )
+
+    rejected_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        readonly=True,
+        copy=False,
+    )
+
+    cancelled_child_rework_id = fields.Many2one(
+        "vagirest.rework.record",
+        readonly=True,
+        copy=False,
+    )
+
+    before_snapshot = fields.Text(
+        readonly=True,
+        copy=False,
+    )
+
+    after_snapshot = fields.Text(
+        readonly=True,
+        copy=False,
+    )
+
+    change_summary = fields.Text(
+        readonly=True,
+        copy=False,
+    )
+
+    applied_at = fields.Datetime(
+        readonly=True,
+        copy=False,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        result = []
+        Sequence = self.env["ir.sequence"].sudo()
+
+        for incoming in vals_list:
+            vals = dict(incoming)
+
+            if not vals.get("rework_qc_record_id"):
+                raise UserError(
+                    _("Rework QC Record is required.")
+                )
+
+            number = Sequence.next_by_code(
+                "vagirest.rework.qc.correction.request"
+            )
+
+            if not number:
+                raise UserError(
+                    _("Rework QC Correction Request sequence is missing.")
+                )
+
+            vals.update({
+                "name": number,
+                "requester_id": self.env.user.id,
+                "requested_at": fields.Datetime.now(),
+                "state": "draft",
+                "reviewed_by_id": False,
+                "reviewed_at": False,
+                "review_note": False,
+                "approved_reversal_picking_id": False,
+                "rework_reversal_picking_id": False,
+                "rejected_reversal_picking_id": False,
+                "cancelled_child_rework_id": False,
+                "before_snapshot": False,
+                "after_snapshot": False,
+                "change_summary": False,
+                "applied_at": False,
+            })
+
+            result.append(vals)
+
+        return super().create(result)
+
+    def write(self, vals):
+        if (
+            not self.env.su
+            and not self.env.context.get(
+                "allow_rework_qc_request_system_write"
+            )
+        ):
+            protected = {
+                "name",
+                "rework_qc_record_id",
+                "requester_id",
+                "requested_at",
+                "state",
+                "reviewed_by_id",
+                "reviewed_at",
+                "approved_reversal_picking_id",
+                "rework_reversal_picking_id",
+                "rejected_reversal_picking_id",
+                "cancelled_child_rework_id",
+                "before_snapshot",
+                "after_snapshot",
+                "change_summary",
+                "applied_at",
+            }
+
+            if protected.intersection(vals):
+                raise UserError(
+                    _(
+                        "Audit and system fields of a Rework QC "
+                        "correction request cannot be edited directly."
+                    )
+                )
+
+            if (
+                "review_note" in vals
+                and not self.env.user.has_group(
+                    "vagirest_production_record."
+                    "group_vagirest_erp_manager"
+                )
+            ):
+                raise UserError(
+                    _(
+                        "Only ERP Manager may enter "
+                        "the Review Note."
+                    )
+                )
+
+            for request in self:
+                if request.state != "draft":
+                    extra = set(vals) - {"review_note"}
+
+                    if extra:
+                        raise UserError(
+                            _(
+                                "Submitted Rework QC correction "
+                                "requests are immutable."
+                            )
+                        )
+
+        return super().write(vals)
+
+    def unlink(self):
+        raise UserError(
+            _(
+                "Rework QC correction requests cannot be deleted. "
+                "They are part of the audit trail."
+            )
+        )
+
+    def _snapshot(self):
+        self.ensure_one()
+
+        rq = self.rework_qc_record_id.sudo()
+
+        payload = {
+            "rework_qc_id": rq.id,
+            "rework_qc_number": rq.name,
+            "state": rq.state,
+            "rework_record_id": rq.rework_record_id.id,
+            "quantity": rq.quantity,
+            "approved_qty": rq.approved_qty,
+            "rework_qty": rq.rework_qty,
+            "rejected_qty": rq.rejected_qty,
+            "inspector_id": (
+                rq.inspector_id.id
+                if rq.inspector_id
+                else False
+            ),
+            "decision_date": str(rq.decision_date or ""),
+            "note": rq.note or "",
+            "approved_picking_id": (
+                rq.approved_picking_id.id
+                if rq.approved_picking_id
+                else False
+            ),
+            "rework_picking_id": (
+                rq.rework_picking_id.id
+                if rq.rework_picking_id
+                else False
+            ),
+            "rejected_picking_id": (
+                rq.rejected_picking_id.id
+                if rq.rejected_picking_id
+                else False
+            ),
+        }
+
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+
+    def action_submit_request(self):
+        for request in self:
+            if request.state != "draft":
+                raise UserError(
+                    _("Only Draft requests can be submitted.")
+                )
+
+            if not (request.reason or "").strip():
+                raise UserError(
+                    _("Correction Reason is required.")
+                )
+
+            rq = request.rework_qc_record_id
+
+            if rq.state != "done":
+                raise UserError(
+                    _(
+                        "Only completed Rework QC decisions "
+                        "can be corrected."
+                    )
+                )
+
+            duplicate = self.sudo().search_count([
+                ("id", "!=", request.id),
+                ("rework_qc_record_id", "=", rq.id),
+                ("state", "in", ["submitted", "approved"]),
+            ])
+
+            if duplicate:
+                raise UserError(
+                    _(
+                        "Another open Rework QC correction request "
+                        "already exists."
+                    )
+                )
+
+            request.with_context(
+                allow_rework_qc_request_system_write=True
+            ).sudo().write({
+                "state": "submitted",
+                "before_snapshot": request._snapshot(),
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>Rework QC correction request submitted.</b>"
+                    "<br/>Requested by: %s"
+                    "<br/>Reason: %s"
+                )
+                % (
+                    request.requester_id.display_name,
+                    request.reason,
+                )
+            )
+
+        return True
+
+    def _check_approver(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may approve "
+                    "a Rework QC correction request."
+                )
+            )
+
+    def action_approve(self):
+        self._check_approver()
+
+        for request in self:
+            if request.state != "submitted":
+                raise UserError(
+                    _("Only Submitted requests can be approved.")
+                )
+
+            if (
+                request.requester_id == self.env.user
+                and not (request.review_note or "").strip()
+            ):
+                raise UserError(
+                    _(
+                        "ERP Manager self-approval requires an "
+                        "Override Reason in Review Note."
+                    )
+                )
+
+            rq = request.rework_qc_record_id.sudo()
+
+            if rq.state != "done":
+                raise UserError(
+                    _(
+                        "The Rework QC record is no longer Done."
+                    )
+                )
+
+            parent = rq.rework_record_id.sudo()
+
+            children = self.env[
+                "vagirest.rework.record"
+            ].sudo().search([
+                ("parent_rework_id", "=", parent.id),
+                ("state", "!=", "cancelled"),
+            ])
+
+            if len(children) > 1:
+                raise UserError(
+                    _(
+                        "Multiple active downstream Rework rounds "
+                        "exist. Manual audit is required."
+                    )
+                )
+
+            child = children[:1]
+
+            if child and child.state != "draft":
+                raise UserError(
+                    _(
+                        "A downstream Rework round has already "
+                        "progressed. Correct that downstream "
+                        "Rework first."
+                    )
+                )
+
+            approved_reverse = (
+                _reverse_done_picking(
+                    rq,
+                    rq.approved_picking_id,
+                    "Rework QC Approved Reversal",
+                )
+                if rq.approved_picking_id
+                else False
+            )
+
+            rework_reverse = (
+                _reverse_done_picking(
+                    rq,
+                    rq.rework_picking_id,
+                    "Rework QC Rework Reversal",
+                )
+                if rq.rework_picking_id
+                else False
+            )
+
+            rejected_reverse = (
+                _reverse_done_picking(
+                    rq,
+                    rq.rejected_picking_id,
+                    "Rework QC Rejected Reversal",
+                )
+                if rq.rejected_picking_id
+                else False
+            )
+
+            if child:
+                child.with_context(
+                    allow_rework_workflow_write=True
+                ).sudo().write({
+                    "state": "cancelled",
+                })
+
+            rq.with_context(
+                allow_rework_qc_workflow_write=True
+            ).sudo().write({
+                "state": "draft",
+                "inspector_id": False,
+                "decision_date": False,
+                "approved_picking_id": False,
+                "rework_picking_id": False,
+                "rejected_picking_id": False,
+                "active_rework_qc_correction_request_id": request.id,
+            })
+
+            parent.with_context(
+                allow_rework_workflow_write=True
+            ).sudo().write({
+                "state": "submitted_to_qc",
+            })
+
+            request.with_context(
+                allow_rework_qc_request_system_write=True
+            ).sudo().write({
+                "state": "approved",
+                "reviewed_by_id": self.env.user.id,
+                "reviewed_at": fields.Datetime.now(),
+                "approved_reversal_picking_id": (
+                    approved_reverse.id
+                    if approved_reverse
+                    else False
+                ),
+                "rework_reversal_picking_id": (
+                    rework_reverse.id
+                    if rework_reverse
+                    else False
+                ),
+                "rejected_reversal_picking_id": (
+                    rejected_reverse.id
+                    if rejected_reverse
+                    else False
+                ),
+                "cancelled_child_rework_id": (
+                    child.id if child else False
+                ),
+                "change_summary": (
+                    "Rework QC decision reopened. "
+                    "Decision transfers reversed. "
+                    "Parent Rework returned to Sent to QC."
+                ),
+            })
+
+            request.message_post(
+                body=_(
+                    "<b>Rework QC correction approved.</b>"
+                    "<br/>Approved by: %s"
+                )
+                % self.env.user.display_name
+            )
+
+        return True
+
+    def action_reject(self):
+        self._check_approver()
+
+        for request in self:
+            if request.state != "submitted":
+                raise UserError(
+                    _("Only Submitted requests can be rejected.")
+                )
+
+            if not (request.review_note or "").strip():
+                raise UserError(
+                    _("Review Note is required when rejecting.")
+                )
+
+            request.with_context(
+                allow_rework_qc_request_system_write=True
+            ).sudo().write({
+                "state": "rejected",
+                "reviewed_by_id": self.env.user.id,
+                "reviewed_at": fields.Datetime.now(),
+            })
+
+        return True
+
+
+# =====================================================================
+# REWORK QC EXTENSION
+# =====================================================================
+
+class VagirestReworkQCCorrectionRequestLink(models.Model):
+    _inherit = "vagirest.rework.qc.record"
+
+    rework_qc_correction_request_ids = fields.One2many(
+        "vagirest.rework.qc.correction.request",
+        "rework_qc_record_id",
+        readonly=True,
+    )
+
+    active_rework_qc_correction_request_id = fields.Many2one(
+        "vagirest.rework.qc.correction.request",
+        readonly=True,
+        copy=False,
+        ondelete="restrict",
+    )
+
+    rework_qc_correction_request_count = fields.Integer(
+        compute="_compute_rework_qc_correction_request_count"
+    )
+
+    def _compute_rework_qc_correction_request_count(self):
+        Request = self.env[
+            "vagirest.rework.qc.correction.request"
+        ].sudo()
+
+        for record in self:
+            record.rework_qc_correction_request_count = (
+                Request.search_count([
+                    ("rework_qc_record_id", "=", record.id)
+                ])
+            )
+
+    def action_request_rework_qc_correction(self):
+        self.ensure_one()
+
+        if self.state != "done":
+            raise UserError(
+                _(
+                    "Correction can only be requested for "
+                    "a completed Rework QC decision."
+                )
+            )
+
+        existing = self.env[
+            "vagirest.rework.qc.correction.request"
+        ].search([
+            ("rework_qc_record_id", "=", self.id),
+            ("requester_id", "=", self.env.user.id),
+            ("state", "=", "draft"),
+        ], limit=1)
+
+        if existing:
+            return {
+                "type": "ir.actions.act_window",
+                "res_model":
+                    "vagirest.rework.qc.correction.request",
+                "res_id": existing.id,
+                "view_mode": "form",
+                "target": "current",
+            }
+
+        return {
+            "type": "ir.actions.act_window",
+            "res_model":
+                "vagirest.rework.qc.correction.request",
+            "view_mode": "form",
+            "target": "current",
+            "context": {
+                "default_rework_qc_record_id": self.id,
+            },
+        }
+
+    def action_open_rework_qc_correction_requests(self):
+        self.ensure_one()
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Rework QC Correction Requests"),
+            "res_model":
+                "vagirest.rework.qc.correction.request",
+            "view_mode": "tree,form",
+            "domain": [
+                ("rework_qc_record_id", "=", self.id)
+            ],
+            "context": {
+                "default_rework_qc_record_id": self.id,
+            },
+        }
+
+    def action_submit_decision(self):
+        active_map = {
+            record.id:
+                record.active_rework_qc_correction_request_id
+            for record in self
+            if (
+                record.active_rework_qc_correction_request_id
+                and
+                record.active_rework_qc_correction_request_id.state
+                == "approved"
+            )
+        }
+
+        result = super().action_submit_decision()
+
+        for record in self:
+            request = active_map.get(record.id)
+
+            if not request:
+                continue
+
+            request.with_context(
+                allow_rework_qc_request_system_write=True
+            ).sudo().write({
+                "state": "applied",
+                "after_snapshot": request._snapshot(),
+                "applied_at": fields.Datetime.now(),
+                "change_summary": (
+                    (request.change_summary or "")
+                    + "\nCorrected Rework QC decision resubmitted."
+                ),
+            })
+
+            record.with_context(
+                allow_rework_qc_workflow_write=True
+            ).sudo().write({
+                "active_rework_qc_correction_request_id": False,
+            })
+
+        return result

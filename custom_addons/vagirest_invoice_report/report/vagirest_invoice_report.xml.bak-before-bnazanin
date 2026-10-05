@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_report_vagirest_invoice" model="ir.actions.report">
+        <field name="name">فاکتور فروش VAGIREST</field>
+        <field name="model">account.move</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">vagirest_invoice_report.report_vagirest_invoice</field>
+        <field name="report_file">vagirest_invoice_report.report_vagirest_invoice</field>
+        <field name="binding_model_id" ref="account.model_account_move"/>
+        <field name="binding_type">report</field>
+        <field name="print_report_name">'VAGIREST-Invoice-%s' % (object.name or 'Draft')</field>
+    </record>
+
+    <template id="report_vagirest_invoice">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+
+                    <div class="page"
+                         dir="rtl"
+                         style="font-family: DejaVu Sans, sans-serif; direction: rtl; text-align: right;">
+
+                        <h2 style="text-align:center; margin-bottom:25px;">
+                            <t t-if="o.state == 'draft'">
+                                پیش‌نویس فاکتور فروش
+                            </t>
+                            <t t-else="">
+                                فاکتور فروش
+                            </t>
+                        </h2>
+
+                        <table style="width:100%; margin-bottom:20px; border-collapse:collapse;">
+                            <tr>
+                                <td style="width:50%; padding:5px;">
+                                    <strong>خریدار:</strong>
+                                    <span t-field="o.partner_id.name"/>
+                                </td>
+
+                                <td style="width:50%; padding:5px;">
+                                    <strong>شماره فاکتور:</strong>
+                                    <span t-field="o.name"/>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style="padding:5px;">
+                                    <strong>شماره تماس:</strong>
+                                    <span t-field="o.partner_id.phone"/>
+                                </td>
+
+                                <td style="padding:5px;">
+                                    <strong>تاریخ:</strong>
+                                    <span t-field="o.invoice_date"/>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style="padding:5px;">
+                                    <strong>آدرس:</strong>
+                                    <span t-field="o.partner_id.contact_address"/>
+                                </td>
+
+                                <td style="padding:5px;">
+                                    <strong>مهلت پرداخت:</strong>
+                                    <span t-field="o.invoice_date_due"/>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <table style="width:100%; border-collapse:collapse; text-align:center;">
+                            <thead>
+                                <tr>
+                                    <th style="border:1px solid #333; padding:7px;">ردیف</th>
+                                    <th style="border:1px solid #333; padding:7px;">شرح کالا</th>
+                                    <th style="border:1px solid #333; padding:7px;">تعداد</th>
+                                    <th style="border:1px solid #333; padding:7px;">مبلغ واحد</th>
+                                    <th style="border:1px solid #333; padding:7px;">تخفیف %</th>
+                                    <th style="border:1px solid #333; padding:7px;">تخفیف واحد</th>
+                                    <th style="border:1px solid #333; padding:7px;">مبلغ نهایی</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                <t t-set="rowno" t-value="0"/>
+
+                                <t t-foreach="o.invoice_line_ids" t-as="line">
+                                    <t t-if="line.display_type == 'product'">
+
+                                        <t t-set="rowno" t-value="rowno + 1"/>
+
+                                        <tr>
+                                            <td style="border:1px solid #333; padding:7px;">
+                                                <span t-esc="rowno"/>
+                                            </td>
+
+                                            <td style="border:1px solid #333; padding:7px; text-align:right;">
+                                                <span t-field="line.name"/>
+                                            </td>
+
+                                            <td style="border:1px solid #333; padding:7px;">
+                                                <span t-field="line.quantity"/>
+                                            </td>
+
+                                            <td style="border:1px solid #333; padding:7px;">
+                                                <span t-esc="'{:,.0f}'.format(line.price_unit)"/>
+                                            </td>
+
+                                            <td style="border:1px solid #333; padding:7px;">
+                                                <span t-esc="'{:,.0f}'.format(line.discount)"/>
+                                            </td>
+
+                                            <td style="border:1px solid #333; padding:7px;">
+                                                <span t-esc="'{:,.0f}'.format(line.price_unit * line.discount / 100.0)"/>
+                                            </td>
+
+                                            <td style="border:1px solid #333; padding:7px;">
+                                                <span t-esc="'{:,.0f}'.format(line.price_subtotal)"/>
+                                            </td>
+                                        </tr>
+
+                                    </t>
+                                </t>
+                            </tbody>
+                        </table>
+
+                        <div style="margin-top:20px; width:45%; margin-right:auto;">
+                            <table style="width:100%; border-collapse:collapse;">
+                                <tr>
+                                    <td style="border:1px solid #333; padding:8px;">
+                                        <strong>جمع کل</strong>
+                                    </td>
+                                    <td style="border:1px solid #333; padding:8px; text-align:center;">
+                                        <strong>
+                                            <span t-esc="'{:,.0f}'.format(o.amount_total)"/>
+                                            ریال
+                                        </strong>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <div style="margin-top:25px; line-height:2;">
+                            کلیه اجناس فوق تا زمان تسویه حساب نزد خریدار به صورت امانت می‌باشد.
+                        </div>
+
+                        <div style="margin-top:60px;">
+                            <strong>مهر و امضای فروشنده</strong>
+                        </div>
+
+                    </div>
+
+                </t>
+            </t>
+        </t>
+    </template>
+
+</odoo>

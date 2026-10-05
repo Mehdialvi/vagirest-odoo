@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_vagirest_product_interest_user,vagirest.product.interest.user,model_vagirest_product_interest,base.group_user,1,0,0,0
+access_vagirest_product_interest_manager,vagirest.product.interest.manager,model_vagirest_product_interest,sales_team.group_sale_manager,1,1,1,1

@@ -1,0 +1,237 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<odoo>
+
+    <record id="view_vagirest_production_correction_form" model="ir.ui.view">
+
+        <field name="name">vagirest.production.correction.form</field>
+
+        <field name="model">vagirest.production.record</field>
+
+        <field name="inherit_id" ref="vagirest_production_record.view_vagirest_production_record_form"/>
+
+        <field name="arch" type="xml">
+
+            <xpath expr="//button[@name='action_submit_to_qc']" position="after">
+
+                <button name="action_return_to_draft" type="object" string="اصلاح و بازگشت به پیش‌نویس" invisible="state != 'submitted'" confirm="در صورت وجود انتقال انبار، موجودی معکوس خواهد شد. ادامه می‌دهید؟"/>
+
+                <button name="action_cancel_record" type="object" string="لغو سند" invisible="state == 'cancelled'" confirm="آیا از لغو سند مطمئن هستید؟"/>
+
+                <button name="action_open_legacy_correction" type="object" string="اصلاح سابقه" invisible="state == 'draft'"/>
+
+                <button name="action_duplicate_record" type="object" string="تکرار سند" invisible="state == 'draft'"/>
+
+            </xpath>
+
+            <xpath expr="//field[@name='state']" position="attributes">
+                <attribute name="statusbar_visible">
+                    draft,submitted,cancelled
+                </attribute>
+            </xpath>
+
+            <xpath expr="//field[@name='note']" position="after">
+
+                <group string="اصلاح / لغو">
+                    <field name="correction_reason" placeholder="علت اصلاح یا لغو..."/>
+
+                    <field name="last_corrected_by_id" readonly="1" invisible="not last_corrected_by_id"/>
+
+                    <field name="last_correction_date" readonly="1" invisible="not last_correction_date"/>
+
+                    <field name="correction_count" readonly="1" invisible="correction_count == 0"/>
+
+                    <field name="reversal_picking_id" readonly="1" invisible="not reversal_picking_id"/>
+                </group>
+
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_production_legacy_correction_form" model="ir.ui.view">
+
+        <field name="name">vagirest.production.legacy.correction.form</field>
+
+        <field name="model">vagirest.production.legacy.correction</field>
+
+        <field name="arch" type="xml">
+
+            <form string="اصلاح سابقه تولید">
+
+                <header>
+                    <button name="action_confirm" type="object" string="ثبت اصلاح سابقه" class="oe_highlight" invisible="state != 'draft'" confirm="این اصلاح فقط سابقه را ثبت می‌کند و موجودی را تغییر نمی‌دهد."/>
+
+                    <button name="action_cancel" type="object" string="لغو اصلاح" invisible="state != 'draft'"/>
+
+                    <field name="state" widget="statusbar"/>
+                </header>
+
+                <sheet>
+
+                    <group>
+                        <group>
+                            <field name="name" readonly="1"/>
+                            <field name="production_record_id"/>
+                            <field name="corrected_production_date" readonly="state != 'draft'"/>
+                            <field name="corrected_raw_material_batch" readonly="state != 'draft'"/>
+                        </group>
+
+                        <group>
+                            <field name="confirmed_by_id" readonly="1" invisible="not confirmed_by_id"/>
+                            <field name="confirmed_date" readonly="1" invisible="not confirmed_date"/>
+                        </group>
+                    </group>
+
+                    <field name="reason" readonly="state != 'draft'" placeholder="علت اصلاح سابقه..."/>
+
+                    <separator string="اطلاعات صحیح"/>
+
+                    <field name="line_ids" readonly="state != 'draft'">
+                        <tree editable="bottom">
+                            <field name="original_line_id" column_invisible="True"/>
+                            <field name="product_id"/>
+                            <field name="quantity"/>
+                        </tree>
+                    </field>
+
+                    <field name="corrected_note" readonly="state != 'draft'"/>
+
+                    <div class="alert alert-warning" role="alert">
+                        این فرم فقط سابقه صحیح را ثبت می‌کند و
+                        هیچ Stock Move یا موجودی را تغییر نمی‌دهد.
+                    </div>
+
+                </sheet>
+
+                <chatter/>
+
+            </form>
+
+        </field>
+    </record>
+
+
+    <record id="view_vagirest_qc_correction_form" model="ir.ui.view">
+
+        <field name="name">vagirest.qc.correction.form</field>
+
+        <field name="model">vagirest.qc.record</field>
+
+        <field name="inherit_id" ref="vagirest_production_record.view_vagirest_qc_record_form"/>
+
+        <field name="arch" type="xml">
+
+            <xpath expr="//button[@name='action_submit_decision']" position="after">
+
+                <button name="action_reopen_decision" type="object" string="اصلاح تصمیم QC" invisible="state != 'done'" confirm="انتقال‌های QC معکوس و فرم برای اصلاح باز شود؟"/>
+
+                <button name="action_cancel_decision" type="object" string="لغو تصمیم QC" invisible="state != 'done'" confirm="آیا تصمیم QC لغو و انتقال‌های مرتبط معکوس شوند؟"/>
+
+                <button name="action_open_legacy_qc_correction" type="object" string="اصلاح سابقه QC" invisible="state == 'draft'"/>
+
+            </xpath>
+
+            <xpath expr="//field[@name='state']" position="attributes">
+                <attribute name="statusbar_visible">
+                    draft,done,cancelled
+                </attribute>
+            </xpath>
+
+            <xpath expr="//field[@name='note']" position="after">
+
+                <group string="اصلاح / لغو QC">
+
+                    <field name="correction_reason" placeholder="علت اصلاح یا لغو QC..."/>
+
+                    <field name="last_corrected_by_id" readonly="1" invisible="not last_corrected_by_id"/>
+
+                    <field name="last_correction_date" readonly="1" invisible="not last_correction_date"/><field name="last_correction_reason" readonly="1" invisible="not last_correction_reason"/>
+
+                    <field name="correction_count" readonly="1" invisible="correction_count == 0"/>
+
+                    <field name="approved_reversal_picking_id" readonly="1" invisible="not approved_reversal_picking_id"/>
+
+                    <field name="rework_reversal_picking_id" readonly="1" invisible="not rework_reversal_picking_id"/>
+
+                    <field name="rejected_reversal_picking_id" readonly="1" invisible="not rejected_reversal_picking_id"/>
+
+                </group>
+
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_qc_legacy_correction_form" model="ir.ui.view">
+
+        <field name="name">vagirest.qc.legacy.correction.form</field>
+
+        <field name="model">vagirest.qc.legacy.correction</field>
+
+        <field name="arch" type="xml">
+
+            <form string="اصلاح سابقه QC">
+
+                <header>
+
+                    <button name="action_confirm" type="object" string="ثبت اصلاح سابقه" class="oe_highlight" invisible="state != 'draft'" confirm="این اصلاح موجودی را تغییر نمی‌دهد."/>
+
+                    <button name="action_cancel" type="object" string="لغو اصلاح" invisible="state != 'draft'"/>
+
+                    <field name="state" widget="statusbar"/>
+
+                </header>
+
+                <sheet>
+
+                    <group>
+                        <group>
+                            <field name="name" readonly="1"/>
+                            <field name="qc_record_id"/>
+                        </group>
+
+                        <group>
+                            <field name="confirmed_by_id" readonly="1" invisible="not confirmed_by_id"/>
+                            <field name="confirmed_date" readonly="1" invisible="not confirmed_date"/>
+                        </group>
+                    </group>
+
+                    <field name="reason" readonly="state != 'draft'" placeholder="علت اصلاح سابقه QC..."/>
+
+                    <separator string="مقادیر صحیح QC"/>
+
+                    <field name="line_ids" readonly="state != 'draft'">
+                        <tree editable="bottom" create="false" delete="false">
+
+                            <field name="original_line_id" column_invisible="True"/>
+
+                            <field name="product_id" readonly="1"/>
+                            <field name="lot_id" readonly="1"/>
+                            <field name="produced_qty" readonly="1"/>
+
+                            <field name="approved_qty"/>
+                            <field name="rework_qty"/>
+                            <field name="rejected_qty"/>
+
+                        </tree>
+                    </field>
+
+                    <field name="corrected_note" readonly="state != 'draft'"/>
+
+                    <div class="alert alert-warning" role="alert">
+                        این اصلاح فقط سابقه صحیح QC را ثبت می‌کند و
+                        هیچ Stock Move را تغییر نمی‌دهد.
+                    </div>
+
+                </sheet>
+
+                <chatter/>
+
+            </form>
+
+        </field>
+    </record>
+
+</odoo>

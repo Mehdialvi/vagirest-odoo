@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="rule_rework_corr_req_operator_own"
+            model="ir.rule">
+        <field name="name">Rework Correction - Requester Own</field>
+        <field name="model_id"
+               ref="model_vagirest_rework_correction_request"/>
+        <field name="groups"
+               eval="[(4, ref('group_vagirest_production_operator'))]"/>
+        <field name="domain_force">[('requester_id', '=', user.id)]</field>
+    </record>
+
+    <record id="rule_rework_corr_req_qc_all"
+            model="ir.rule">
+        <field name="name">Rework Correction - QC All</field>
+        <field name="model_id"
+               ref="model_vagirest_rework_correction_request"/>
+        <field name="groups"
+               eval="[(4, ref('group_vagirest_qc_manager'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+    <record id="rule_rework_corr_req_erp_all"
+            model="ir.rule">
+        <field name="name">Rework Correction - ERP All</field>
+        <field name="model_id"
+               ref="model_vagirest_rework_correction_request"/>
+        <field name="groups"
+               eval="[(4, ref('group_vagirest_erp_manager'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+
+    <record id="rule_rework_qc_corr_req_qc_own"
+            model="ir.rule">
+        <field name="name">Rework QC Correction - Requester Own</field>
+        <field name="model_id"
+               ref="model_vagirest_rework_qc_correction_request"/>
+        <field name="groups"
+               eval="[(4, ref('group_vagirest_qc_manager'))]"/>
+        <field name="domain_force">[('requester_id', '=', user.id)]</field>
+    </record>
+
+    <record id="rule_rework_qc_corr_req_erp_all"
+            model="ir.rule">
+        <field name="name">Rework QC Correction - ERP All</field>
+        <field name="model_id"
+               ref="model_vagirest_rework_qc_correction_request"/>
+        <field name="groups"
+               eval="[(4, ref('group_vagirest_erp_manager'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+</odoo>

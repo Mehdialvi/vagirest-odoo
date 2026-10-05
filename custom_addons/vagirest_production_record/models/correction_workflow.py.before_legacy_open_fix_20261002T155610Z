@@ -1,0 +1,1218 @@
+from collections import defaultdict
+
+from odoo import api, fields, models, _
+from odoo.exceptions import UserError
+from odoo.tools.float_utils import float_compare
+
+
+# =========================================================
+# Shared helpers
+# =========================================================
+
+def _available_quantity(env, product, location, lot):
+    quants = (
+        env["stock.quant"]
+        .sudo()
+        .with_company(env.company)
+        .search([
+            ("company_id", "=", env.company.id),
+            ("location_id", "=", location.id),
+            ("product_id", "=", product.id),
+            ("lot_id", "=", lot.id if lot else False),
+        ])
+    )
+
+    return (
+        sum(quants.mapped("quantity"))
+        - sum(quants.mapped("reserved_quantity"))
+    )
+
+
+def _reverse_done_picking(record, picking, label):
+    """
+    Reverse a completed picking through a real stock transfer.
+
+    No stock.quant is modified directly.
+    All required destination stock is verified before creating
+    the reversal.
+    """
+
+    if not picking:
+        return False
+
+    if picking.state != "done":
+        raise UserError(
+            _(
+                "Stock transfer %s is not Done and cannot "
+                "be reversed automatically."
+            )
+            % picking.display_name
+        )
+
+    move_lines = picking.move_line_ids.filtered(
+        lambda line: line.quantity > 0
+    )
+
+    if not move_lines:
+        raise UserError(
+            _("No completed quantities were found in %s.")
+            % picking.display_name
+        )
+
+    requirements = defaultdict(float)
+    samples = {}
+
+    for line in move_lines:
+        key = (
+            line.product_id.id,
+            line.location_dest_id.id,
+            line.lot_id.id if line.lot_id else False,
+            line.product_uom_id.id,
+        )
+
+        requirements[key] += line.quantity
+        samples[key] = line
+
+    # Verify everything before creating a reversal.
+    for key, required_qty in requirements.items():
+        line = samples[key]
+
+        available_qty = _available_quantity(
+            record.env,
+            line.product_id,
+            line.location_dest_id,
+            line.lot_id,
+        )
+
+        rounding = line.product_uom_id.rounding or 0.01
+
+        if float_compare(
+            available_qty,
+            required_qty,
+            precision_rounding=rounding,
+        ) < 0:
+            raise UserError(
+                _(
+                    "Automatic correction is not safe.\n\n"
+                    "Product: %s\n"
+                    "Lot: %s\n"
+                    "Location: %s\n"
+                    "Required for reversal: %s\n"
+                    "Available: %s\n\n"
+                    "Use Legacy Record Correction instead."
+                )
+                % (
+                    line.product_id.display_name,
+                    line.lot_id.name if line.lot_id else "-",
+                    line.location_dest_id.display_name,
+                    required_qty,
+                    available_qty,
+                )
+            )
+
+    Picking = (
+        record.env["stock.picking"]
+        .sudo()
+        .with_company(record.env.company)
+    )
+
+    Move = (
+        record.env["stock.move"]
+        .sudo()
+        .with_company(record.env.company)
+    )
+
+    MoveLine = (
+        record.env["stock.move.line"]
+        .sudo()
+        .with_company(record.env.company)
+    )
+
+    reverse_picking = Picking.create({
+        "picking_type_id": picking.picking_type_id.id,
+        "location_id": picking.location_dest_id.id,
+        "location_dest_id": picking.location_id.id,
+        "origin": "REV/%s/%s" % (
+            record.display_name,
+            picking.name,
+        ),
+        "company_id": record.env.company.id,
+    })
+
+    created_moves = []
+
+    for key, quantity in requirements.items():
+        line = samples[key]
+
+        move = Move.create({
+            "name": "%s - %s" % (
+                label,
+                line.product_id.display_name,
+            ),
+            "origin": reverse_picking.origin,
+            "product_id": line.product_id.id,
+            "product_uom_qty": quantity,
+            "product_uom": line.product_uom_id.id,
+            "location_id": line.location_dest_id.id,
+            "location_dest_id": line.location_id.id,
+            "picking_id": reverse_picking.id,
+            "company_id": record.env.company.id,
+        })
+
+        created_moves.append(
+            (move, line, quantity)
+        )
+
+    reverse_picking.action_confirm()
+
+    for move, original_line, quantity in created_moves:
+        MoveLine.create({
+            "move_id": move.id,
+            "picking_id": reverse_picking.id,
+            "company_id": record.env.company.id,
+            "product_id": original_line.product_id.id,
+            "product_uom_id": original_line.product_uom_id.id,
+            "quantity": quantity,
+            "picked": True,
+            "lot_id": (
+                original_line.lot_id.id
+                if original_line.lot_id
+                else False
+            ),
+            "location_id": original_line.location_dest_id.id,
+            "location_dest_id": original_line.location_id.id,
+        })
+
+    result = reverse_picking.with_context(
+        cancel_backorder=True
+    ).button_validate()
+
+    if reverse_picking.state != "done":
+        if isinstance(result, dict):
+            raise UserError(
+                _(
+                    "The reversal of %s requires an unexpected "
+                    "validation wizard."
+                )
+                % picking.display_name
+            )
+
+        raise UserError(
+            _("The reversal transfer was not completed.")
+        )
+
+    return reverse_picking
+
+
+# =========================================================
+# Production
+# =========================================================
+
+class VagirestProductionRecordCorrection(models.Model):
+    _inherit = "vagirest.production.record"
+
+    state = fields.Selection(
+        selection_add=[
+            ("cancelled", "Cancelled"),
+        ],
+        ondelete={
+            "cancelled": "set default",
+        },
+    )
+
+    correction_reason = fields.Text(
+        string="Correction / Cancellation Reason",
+        tracking=True,
+        copy=False,
+    )
+
+    last_corrected_by_id = fields.Many2one(
+        "res.users",
+        string="Last Corrected By",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    last_correction_date = fields.Datetime(
+        string="Last Correction Date",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    correction_count = fields.Integer(
+        string="Correction Count",
+        default=0,
+        readonly=True,
+        copy=False,
+    )
+
+    reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Last Reversal Transfer",
+        readonly=True,
+        copy=False,
+        tracking=True,
+    )
+
+    legacy_correction_ids = fields.One2many(
+        "vagirest.production.legacy.correction",
+        "production_record_id",
+        string="Legacy Corrections",
+    )
+
+    def _check_correction_access(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may execute "
+                    "a direct production correction."
+                )
+            )
+
+    def _require_reason(self):
+        self.ensure_one()
+
+        if not (self.correction_reason or "").strip():
+            raise UserError(
+                _(
+                    "Enter the correction / cancellation reason "
+                    "before continuing."
+                )
+            )
+
+    def _get_related_qc(self):
+        self.ensure_one()
+
+        return (
+            self.env["vagirest.qc.record"]
+            .sudo()
+            .with_context(active_test=False)
+            .search([
+                ("production_record_id", "=", self.id),
+            ], limit=1)
+        )
+
+    def action_submit_to_qc(self):
+        result = super().action_submit_to_qc()
+
+        for record in self:
+            qc_record = record._get_related_qc()
+
+            if qc_record:
+                if not qc_record.active:
+                    qc_record.sudo().write({
+                        "active": True,
+                    })
+
+                qc_record._sync_lines_from_production()
+
+        return result
+
+    def action_return_to_draft(self):
+        self._check_correction_access()
+
+        for record in self:
+            if record.state != "submitted":
+                raise UserError(
+                    _(
+                        "Only a Submitted production record "
+                        "can be returned to Draft."
+                    )
+                )
+
+            record._require_reason()
+
+            qc_record = record._get_related_qc()
+
+            if qc_record and qc_record.state == "done":
+                raise UserError(
+                    _(
+                        "The related QC decision is already Done.\n\n"
+                        "Correct or cancel the QC decision first."
+                    )
+                )
+
+            reason = record.correction_reason.strip()
+
+            reversal = False
+
+            # Early historical records sometimes have no picking.
+            if record.stock_picking_id:
+                reversal = _reverse_done_picking(
+                    record,
+                    record.stock_picking_id,
+                    "Production Correction Reversal",
+                )
+
+            if qc_record and qc_record.state == "draft":
+                qc_record.line_ids.sudo().unlink()
+
+            record.line_ids.write({
+                "lot_id": False,
+                "stock_move_id": False,
+            })
+
+            record.write({
+                "state": "draft",
+                "stock_picking_id": False,
+                "reversal_picking_id": (
+                    reversal.id if reversal else False
+                ),
+                "last_corrected_by_id": self.env.user.id,
+                "last_correction_date": fields.Datetime.now(),
+                "correction_count": record.correction_count + 1,
+                "correction_reason": False,
+            })
+
+            record.message_post(
+                body=_(
+                    "<b>Production returned to Draft for correction.</b>"
+                    "<br/>Reason: %s"
+                    "<br/>Reversal: %s"
+                )
+                % (
+                    reason,
+                    reversal.display_name
+                    if reversal
+                    else "Not required",
+                )
+            )
+
+        return True
+
+    def action_cancel_record(self):
+        self._check_correction_access()
+
+        for record in self:
+            if record.state == "cancelled":
+                raise UserError(
+                    _("This production record is already cancelled.")
+                )
+
+            record._require_reason()
+
+            qc_record = record._get_related_qc()
+
+            if qc_record and qc_record.state == "done":
+                raise UserError(
+                    _(
+                        "The related QC decision is Done. "
+                        "Correct or cancel QC first."
+                    )
+                )
+
+            reason = record.correction_reason.strip()
+            reversal = False
+
+            if (
+                record.state == "submitted"
+                and record.stock_picking_id
+            ):
+                reversal = _reverse_done_picking(
+                    record,
+                    record.stock_picking_id,
+                    "Production Cancellation Reversal",
+                )
+
+            if qc_record and qc_record.state == "draft":
+                qc_record.sudo().write({
+                    "active": False,
+                })
+
+            record.write({
+                "state": "cancelled",
+                "reversal_picking_id": (
+                    reversal.id if reversal else False
+                ),
+                "last_corrected_by_id": self.env.user.id,
+                "last_correction_date": fields.Datetime.now(),
+                "correction_count": record.correction_count + 1,
+                "correction_reason": False,
+            })
+
+            record.message_post(
+                body=_(
+                    "<b>Production record cancelled.</b>"
+                    "<br/>Reason: %s"
+                    "<br/>Reversal: %s"
+                )
+                % (
+                    reason,
+                    reversal.display_name
+                    if reversal
+                    else "Not required",
+                )
+            )
+
+        return True
+
+    def action_duplicate_record(self):
+        self.ensure_one()
+
+        new_record = self.copy(default={
+            "operator_id": self.env.user.id,
+            "state": "draft",
+            "stock_picking_id": False,
+            "reversal_picking_id": False,
+            "correction_reason": False,
+            "last_corrected_by_id": False,
+            "last_correction_date": False,
+            "correction_count": 0,
+        })
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Production Record"),
+            "res_model": "vagirest.production.record",
+            "res_id": new_record.id,
+            "view_mode": "form",
+            "target": "current",
+        }
+
+    def action_open_legacy_correction(self):
+        self.ensure_one()
+        self._check_correction_access()
+
+        Correction = self.env[
+            "vagirest.production.legacy.correction"
+        ]
+
+        correction = Correction.search([
+            ("production_record_id", "=", self.id),
+            ("state", "=", "draft"),
+        ], limit=1)
+
+        if not correction:
+            correction = Correction.create({
+                "production_record_id": self.id,
+                "corrected_production_date": self.production_date,
+                "corrected_raw_material_batch": (
+                    self.raw_material_batch
+                ),
+                "corrected_note": self.note,
+            })
+
+            Line = self.env[
+                "vagirest.production.legacy.correction.line"
+            ]
+
+            for line in self.line_ids:
+                Line.create({
+                    "correction_id": correction.id,
+                    "original_line_id": line.id,
+                    "product_id": line.product_id.id,
+                    "quantity": line.quantity,
+                })
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Legacy Production Correction"),
+            "res_model": (
+                "vagirest.production.legacy.correction"
+            ),
+            "res_id": correction.id,
+            "view_mode": "form",
+            "target": "current",
+        }
+
+
+# =========================================================
+# Production legacy correction
+# =========================================================
+
+class VagirestProductionLegacyCorrection(models.Model):
+    _name = "vagirest.production.legacy.correction"
+    _description = "VAGIREST Production Legacy Correction"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "id desc"
+
+    name = fields.Char(
+        default="New",
+        readonly=True,
+        copy=False,
+    )
+
+    production_record_id = fields.Many2one(
+        "vagirest.production.record",
+        required=True,
+        readonly=True,
+        ondelete="restrict",
+    )
+
+    reason = fields.Text(
+        required=True,
+        tracking=True,
+    )
+
+    corrected_production_date = fields.Date(
+        string="Corrected Production Date",
+        required=True,
+    )
+
+    corrected_raw_material_batch = fields.Char(
+        string="Corrected Raw Material Batch",
+        required=True,
+    )
+
+    corrected_note = fields.Text(
+        string="Corrected Notes",
+    )
+
+    line_ids = fields.One2many(
+        "vagirest.production.legacy.correction.line",
+        "correction_id",
+        string="Corrected Lines",
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("confirmed", "Confirmed"),
+            ("cancelled", "Cancelled"),
+        ],
+        default="draft",
+        readonly=True,
+        required=True,
+        tracking=True,
+    )
+
+    confirmed_by_id = fields.Many2one(
+        "res.users",
+        readonly=True,
+    )
+
+    confirmed_date = fields.Datetime(
+        readonly=True,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        sequence = self.env["ir.sequence"]
+
+        for vals in vals_list:
+            if vals.get("name", "New") == "New":
+                vals["name"] = (
+                    sequence.next_by_code(
+                        "vagirest.production.legacy.correction"
+                    )
+                    or "New"
+                )
+
+        return super().create(vals_list)
+
+    def action_confirm(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may confirm "
+                    "a legacy production correction."
+                )
+            )
+
+        for record in self:
+            if record.state != "draft":
+                raise UserError(
+                    _("Only Draft corrections can be confirmed.")
+                )
+
+            if not (record.reason or "").strip():
+                raise UserError(
+                    _("Correction reason is required.")
+                )
+
+            if not record.line_ids:
+                raise UserError(
+                    _("At least one corrected line is required.")
+                )
+
+            if any(
+                line.quantity <= 0
+                for line in record.line_ids
+            ):
+                raise UserError(
+                    _("Corrected quantities must be greater than zero.")
+                )
+
+            record.write({
+                "state": "confirmed",
+                "confirmed_by_id": self.env.user.id,
+                "confirmed_date": fields.Datetime.now(),
+            })
+
+            record.production_record_id.message_post(
+                body=_(
+                    "<b>Legacy production correction confirmed.</b>"
+                    "<br/>Correction: %s"
+                    "<br/>Reason: %s"
+                    "<br/><b>No stock quantity was changed.</b>"
+                )
+                % (
+                    record.display_name,
+                    record.reason,
+                )
+            )
+
+        return True
+
+    def action_cancel(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may cancel "
+                    "a legacy production correction."
+                )
+            )
+
+        for record in self:
+            if record.state != "draft":
+                raise UserError(
+                    _("Only Draft corrections can be cancelled.")
+                )
+
+            record.write({
+                "state": "cancelled",
+            })
+
+        return True
+
+
+class VagirestProductionLegacyCorrectionLine(models.Model):
+    _name = "vagirest.production.legacy.correction.line"
+    _description = "Production Legacy Correction Line"
+
+    correction_id = fields.Many2one(
+        "vagirest.production.legacy.correction",
+        required=True,
+        ondelete="cascade",
+    )
+
+    original_line_id = fields.Many2one(
+        "vagirest.production.record.line",
+        readonly=True,
+        ondelete="set null",
+    )
+
+    product_id = fields.Many2one(
+        "product.product",
+        required=True,
+    )
+
+    quantity = fields.Float(
+        required=True,
+    )
+
+
+# =========================================================
+# QC
+# =========================================================
+
+class VagirestQCRecordCorrection(models.Model):
+    _inherit = "vagirest.qc.record"
+
+    state = fields.Selection(
+        selection_add=[
+            ("cancelled", "Cancelled"),
+        ],
+        ondelete={
+            "cancelled": "set default",
+        },
+    )
+
+    correction_reason = fields.Text(
+        string="Correction / Cancellation Reason",
+        copy=False,
+    )
+
+    last_corrected_by_id = fields.Many2one(
+        "res.users",
+        string="Last Corrected By",
+        readonly=True,
+        copy=False,
+    )
+
+    last_correction_date = fields.Datetime(
+        string="Last Correction Date",
+        readonly=True,
+        copy=False,
+    )
+
+    last_correction_reason = fields.Text(
+        string="Last Correction Reason",
+        readonly=True,
+        copy=False,
+    )
+
+    correction_count = fields.Integer(
+        string="Correction Count",
+        default=0,
+        readonly=True,
+        copy=False,
+    )
+
+    approved_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Approved Reversal",
+        readonly=True,
+        copy=False,
+    )
+
+    rework_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Rework Reversal",
+        readonly=True,
+        copy=False,
+    )
+
+    rejected_reversal_picking_id = fields.Many2one(
+        "stock.picking",
+        string="Rejected Reversal",
+        readonly=True,
+        copy=False,
+    )
+
+    legacy_correction_ids = fields.One2many(
+        "vagirest.qc.legacy.correction",
+        "qc_record_id",
+        string="Legacy Corrections",
+    )
+
+    def _check_qc_access(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may execute "
+                    "a direct QC correction."
+                )
+            )
+
+    def _require_qc_reason(self):
+        self.ensure_one()
+
+        if not (self.correction_reason or "").strip():
+            raise UserError(
+                _("Enter the QC correction reason first.")
+            )
+
+    def _has_rework_history(self):
+        self.ensure_one()
+
+        if not self.line_ids:
+            return False
+
+        return bool(
+            self.env["vagirest.rework.record"]
+            .sudo()
+            .search_count([
+                ("source_qc_line_id", "in", self.line_ids.ids),
+            ])
+        )
+
+    def _reverse_qc_transfers(self):
+        self.ensure_one()
+
+        if self._has_rework_history():
+            raise UserError(
+                _(
+                    "This QC record has Rework history and cannot "
+                    "be reversed automatically.\n\n"
+                    "Use Legacy QC Correction."
+                )
+            )
+
+        approved_reverse = (
+            _reverse_done_picking(
+                self,
+                self.approved_picking_id,
+                "QC Approved Reversal",
+            )
+            if self.approved_picking_id
+            else False
+        )
+
+        rework_reverse = (
+            _reverse_done_picking(
+                self,
+                self.rework_picking_id,
+                "QC Rework Reversal",
+            )
+            if self.rework_picking_id
+            else False
+        )
+
+        rejected_reverse = (
+            _reverse_done_picking(
+                self,
+                self.rejected_picking_id,
+                "QC Rejected Reversal",
+            )
+            if self.rejected_picking_id
+            else False
+        )
+
+        return (
+            approved_reverse,
+            rework_reverse,
+            rejected_reverse,
+        )
+
+    def action_reopen_decision(self):
+        self._check_qc_access()
+
+        for record in self:
+            if record.state != "done":
+                raise UserError(
+                    _("Only Done QC can be reopened.")
+                )
+
+            record._require_qc_reason()
+
+            reason = record.correction_reason.strip()
+
+            (
+                approved_reverse,
+                rework_reverse,
+                rejected_reverse,
+            ) = record._reverse_qc_transfers()
+
+            record.with_context(
+                allow_qc_correction=True
+            ).write({
+                "state": "draft",
+                "inspector_id": False,
+                "decision_date": False,
+                "approved_picking_id": False,
+                "rework_picking_id": False,
+                "rejected_picking_id": False,
+                "approved_reversal_picking_id": (
+                    approved_reverse.id
+                    if approved_reverse else False
+                ),
+                "rework_reversal_picking_id": (
+                    rework_reverse.id
+                    if rework_reverse else False
+                ),
+                "rejected_reversal_picking_id": (
+                    rejected_reverse.id
+                    if rejected_reverse else False
+                ),
+                "last_corrected_by_id": self.env.user.id,
+                "last_correction_date": fields.Datetime.now(),
+                "last_correction_reason": reason,
+                "correction_count": record.correction_count + 1,
+                "correction_reason": False,
+            })
+
+        return True
+
+    def action_cancel_decision(self):
+        self._check_qc_access()
+
+        for record in self:
+            if record.state != "done":
+                raise UserError(
+                    _("Only Done QC can be cancelled.")
+                )
+
+            record._require_qc_reason()
+
+            reason = record.correction_reason.strip()
+
+            (
+                approved_reverse,
+                rework_reverse,
+                rejected_reverse,
+            ) = record._reverse_qc_transfers()
+
+            record.with_context(
+                allow_qc_correction=True
+            ).write({
+                "state": "cancelled",
+                "approved_picking_id": False,
+                "rework_picking_id": False,
+                "rejected_picking_id": False,
+                "approved_reversal_picking_id": (
+                    approved_reverse.id
+                    if approved_reverse else False
+                ),
+                "rework_reversal_picking_id": (
+                    rework_reverse.id
+                    if rework_reverse else False
+                ),
+                "rejected_reversal_picking_id": (
+                    rejected_reverse.id
+                    if rejected_reverse else False
+                ),
+                "last_corrected_by_id": self.env.user.id,
+                "last_correction_date": fields.Datetime.now(),
+                "last_correction_reason": reason,
+                "correction_count": record.correction_count + 1,
+                "correction_reason": False,
+            })
+
+        return True
+
+    def action_open_legacy_qc_correction(self):
+        self.ensure_one()
+        self._check_qc_access()
+
+        Correction = self.env[
+            "vagirest.qc.legacy.correction"
+        ]
+
+        correction = Correction.search([
+            ("qc_record_id", "=", self.id),
+            ("state", "=", "draft"),
+        ], limit=1)
+
+        if not correction:
+            correction = Correction.create({
+                "qc_record_id": self.id,
+                "corrected_note": self.note,
+            })
+
+            Line = self.env[
+                "vagirest.qc.legacy.correction.line"
+            ]
+
+            for line in self.line_ids:
+                Line.create({
+                    "correction_id": correction.id,
+                    "original_line_id": line.id,
+                    "product_id": line.product_id.id,
+                    "lot_id": line.lot_id.id,
+                    "produced_qty": line.produced_qty,
+                    "approved_qty": line.approved_qty,
+                    "rework_qty": line.rework_qty,
+                    "rejected_qty": line.rejected_qty,
+                })
+
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Legacy QC Correction"),
+            "res_model": "vagirest.qc.legacy.correction",
+            "res_id": correction.id,
+            "view_mode": "form",
+            "target": "current",
+        }
+
+
+# =========================================================
+# QC legacy correction
+# =========================================================
+
+class VagirestQCLegacyCorrection(models.Model):
+    _name = "vagirest.qc.legacy.correction"
+    _description = "VAGIREST QC Legacy Correction"
+    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _order = "id desc"
+
+    name = fields.Char(
+        default="New",
+        readonly=True,
+        copy=False,
+    )
+
+    qc_record_id = fields.Many2one(
+        "vagirest.qc.record",
+        required=True,
+        readonly=True,
+        ondelete="restrict",
+    )
+
+    reason = fields.Text(
+        required=True,
+        tracking=True,
+    )
+
+    corrected_note = fields.Text(
+        string="Corrected QC Notes",
+    )
+
+    line_ids = fields.One2many(
+        "vagirest.qc.legacy.correction.line",
+        "correction_id",
+        string="Corrected QC Lines",
+    )
+
+    state = fields.Selection(
+        [
+            ("draft", "Draft"),
+            ("confirmed", "Confirmed"),
+            ("cancelled", "Cancelled"),
+        ],
+        default="draft",
+        required=True,
+        readonly=True,
+        tracking=True,
+    )
+
+    confirmed_by_id = fields.Many2one(
+        "res.users",
+        readonly=True,
+    )
+
+    confirmed_date = fields.Datetime(
+        readonly=True,
+    )
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        sequence = self.env["ir.sequence"]
+
+        for vals in vals_list:
+            if vals.get("name", "New") == "New":
+                vals["name"] = (
+                    sequence.next_by_code(
+                        "vagirest.qc.legacy.correction"
+                    )
+                    or "New"
+                )
+
+        return super().create(vals_list)
+
+    def action_confirm(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may confirm "
+                    "a legacy QC correction."
+                )
+            )
+
+        for record in self:
+            if record.state != "draft":
+                raise UserError(
+                    _("Only Draft corrections can be confirmed.")
+                )
+
+            if not (record.reason or "").strip():
+                raise UserError(
+                    _("Correction reason is required.")
+                )
+
+            if not record.line_ids:
+                raise UserError(
+                    _("No QC correction lines were found.")
+                )
+
+            for line in record.line_ids:
+                quantities = [
+                    line.approved_qty,
+                    line.rework_qty,
+                    line.rejected_qty,
+                ]
+
+                if any(qty < 0 for qty in quantities):
+                    raise UserError(
+                        _("QC quantities cannot be negative.")
+                    )
+
+                total = sum(quantities)
+
+                rounding = (
+                    line.product_id.uom_id.rounding
+                    or 0.01
+                )
+
+                if float_compare(
+                    total,
+                    line.produced_qty,
+                    precision_rounding=rounding,
+                ) != 0:
+                    raise UserError(
+                        _(
+                            "For %s, Approved + Rework + Rejected "
+                            "must equal Produced (%s)."
+                        )
+                        % (
+                            line.product_id.display_name,
+                            line.produced_qty,
+                        )
+                    )
+
+            record.write({
+                "state": "confirmed",
+                "confirmed_by_id": self.env.user.id,
+                "confirmed_date": fields.Datetime.now(),
+            })
+
+        return True
+
+    def action_cancel(self):
+        if not self.env.user.has_group(
+            "vagirest_production_record."
+            "group_vagirest_erp_manager"
+        ):
+            raise UserError(
+                _(
+                    "Only the VAGIREST ERP Manager may cancel "
+                    "a legacy QC correction."
+                )
+            )
+
+        for record in self:
+            if record.state != "draft":
+                raise UserError(
+                    _("Only Draft corrections can be cancelled.")
+                )
+
+            record.write({
+                "state": "cancelled",
+            })
+
+        return True
+
+
+class VagirestQCLegacyCorrectionLine(models.Model):
+    _name = "vagirest.qc.legacy.correction.line"
+    _description = "QC Legacy Correction Line"
+
+    correction_id = fields.Many2one(
+        "vagirest.qc.legacy.correction",
+        required=True,
+        ondelete="cascade",
+    )
+
+    original_line_id = fields.Many2one(
+        "vagirest.qc.record.line",
+        readonly=True,
+        ondelete="set null",
+    )
+
+    product_id = fields.Many2one(
+        "product.product",
+        required=True,
+        readonly=True,
+    )
+
+    lot_id = fields.Many2one(
+        "stock.lot",
+        readonly=True,
+    )
+
+    produced_qty = fields.Float(
+        readonly=True,
+    )
+
+    approved_qty = fields.Float()
+
+    rework_qty = fields.Float()
+
+    rejected_qty = fields.Float()

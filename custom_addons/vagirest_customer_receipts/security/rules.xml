@@ -1,0 +1,32 @@
+<odoo>
+  <record id="receipt_company_rule" model="ir.rule">
+    <field name="name">Customer receipts allowed companies</field>
+    <field name="model_id" ref="model_vagirest_customer_receipt"/>
+    <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+  </record>
+  <record id="receipt_personal_rule" model="ir.rule">
+    <field name="name">Customer receipts created by current user</field>
+    <field name="model_id" ref="model_vagirest_customer_receipt"/>
+    <field name="groups" eval="[(4, ref('vagirest_native_dashboard.group_personal_dashboard'))]"/>
+    <field name="domain_force">['|', ('create_uid', '=', user.id), ('partner_id.vagirest_balance_ids.followup_user_id', '=', user.id)]</field>
+    <field name="perm_write" eval="False"/>
+    <field name="perm_create" eval="False"/>
+    <field name="perm_unlink" eval="False"/>
+  </record>
+  <record id="receipt_personal_edit_rule" model="ir.rule">
+    <field name="name">Customer receipts edit own only</field>
+    <field name="model_id" ref="model_vagirest_customer_receipt"/>
+    <field name="groups" eval="[(4, ref('vagirest_native_dashboard.group_personal_dashboard'))]"/>
+    <field name="domain_force">[('create_uid', '=', user.id)]</field>
+    <field name="perm_read" eval="False"/>
+    <field name="perm_write" eval="True"/>
+    <field name="perm_create" eval="True"/>
+    <field name="perm_unlink" eval="True"/>
+  </record>
+  <record id="receipt_manager_rule" model="ir.rule">
+    <field name="name">Customer receipts manager</field>
+    <field name="model_id" ref="model_vagirest_customer_receipt"/>
+    <field name="groups" eval="[(4, ref('sales_team.group_sale_manager'))]"/>
+    <field name="domain_force">[(1, '=', 1)]</field>
+  </record>
+</odoo>

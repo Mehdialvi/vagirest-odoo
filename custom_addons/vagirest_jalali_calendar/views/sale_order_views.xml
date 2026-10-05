@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_sale_order_form_jalali" model="ir.ui.view">
+        <field name="name">sale.order.form.jalali</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="(//field[@name='date_order'])[2]" position="after">
+
+                <!-- Editable for authorized users -->
+                <field name="date_order_jalali"
+                       string="تاریخ سفارش شمسی"
+                       groups="vagirest_jalali_calendar.group_sale_order_jalali_date_edit"/>
+
+                <!-- Read-only for everyone else -->
+                <field name="date_order_jalali"
+                       string="تاریخ سفارش شمسی"
+                       readonly="1"
+                       groups="!vagirest_jalali_calendar.group_sale_order_jalali_date_edit"/>
+
+            </xpath>
+
+        </field>
+    </record>
+
+
+    <record id="view_sale_quotation_tree_jalali" model="ir.ui.view">
+        <field name="name">sale.order.quotation.tree.jalali</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_quotation_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='create_date']" position="after">
+                <field name="date_order_jalali"
+                       string="تاریخ سفارش شمسی"
+                       optional="show"
+                       readonly="1"/>
+            </xpath>
+        </field>
+    </record>
+
+
+    <record id="view_sale_order_tree_jalali" model="ir.ui.view">
+        <field name="name">sale.order.tree.jalali</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='date_order']" position="after">
+                <field name="date_order_jalali"
+                       string="تاریخ سفارش شمسی"
+                       optional="show"
+                       readonly="1"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

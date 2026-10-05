@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="1">
+
+    <record id="product_interest_pessary"
+            model="vagirest.product.interest">
+        <field name="name">پساری‌ها</field>
+        <field name="code">pessary</field>
+        <field name="sequence">10</field>
+    </record>
+
+    <record id="product_interest_vaginal_dilator"
+            model="vagirest.product.interest">
+        <field name="name">دیلاتور واژینال</field>
+        <field name="code">vaginal_dilator</field>
+        <field name="sequence">20</field>
+    </record>
+
+    <record id="product_interest_rectal_dilator"
+            model="vagirest.product.interest">
+        <field name="name">دیلاتور رکتال</field>
+        <field name="code">rectal_dilator</field>
+        <field name="sequence">30</field>
+    </record>
+
+    <record id="product_interest_pelvic_wand"
+            model="vagirest.product.interest">
+        <field name="name">Pelvic Wand</field>
+        <field name="code">pelvic_wand</field>
+        <field name="sequence">40</field>
+    </record>
+
+    <record id="product_interest_vaginal_cones"
+            model="vagirest.product.interest">
+        <field name="name">Vaginal Cones</field>
+        <field name="code">vaginal_cones</field>
+        <field name="sequence">50</field>
+    </record>
+
+    <record id="product_interest_vaginoplasty"
+            model="vagirest.product.interest">
+        <field name="name">محصولات واژینوپلاستی</field>
+        <field name="code">vaginoplasty</field>
+        <field name="sequence">60</field>
+    </record>
+
+    <record id="product_interest_physiotherapy"
+            model="vagirest.product.interest">
+        <field name="name">محصولات فیزیوتراپی</field>
+        <field name="code">physiotherapy</field>
+        <field name="sequence">70</field>
+    </record>
+
+    <record id="product_interest_education"
+            model="vagirest.product.interest">
+        <field name="name">آموزش و پشتیبانی علمی</field>
+        <field name="code">education</field>
+        <field name="sequence">80</field>
+    </record>
+
+    <record id="product_interest_pessary_fitting"
+            model="vagirest.product.interest">
+        <field name="name">پشتیبانی فیتینگ پساری</field>
+        <field name="code">pessary_fitting</field>
+        <field name="sequence">90</field>
+    </record>
+
+</odoo>

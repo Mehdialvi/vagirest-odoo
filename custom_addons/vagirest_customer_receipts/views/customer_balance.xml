@@ -1,0 +1,41 @@
+<odoo>
+  <record id="balance_tree" model="ir.ui.view">
+    <field name="name">vagirest.customer.balance.tree</field><field name="model">vagirest.customer.balance</field>
+    <field name="arch" type="xml"><tree decoration-danger="status == 'debtor'" decoration-muted="status == 'unknown'">
+      <field name="partner_id"/><field name="currency_id"/><field name="followup_user_id"/>
+      <field name="status"/><field name="current_balance" invisible="status == 'unknown'"/>
+      <field name="as_of_jalali"/>
+    </tree></field>
+  </record>
+  <record id="balance_form" model="ir.ui.view">
+    <field name="name">vagirest.customer.balance.form</field><field name="model">vagirest.customer.balance</field>
+    <field name="arch" type="xml"><form><sheet>
+      <group><field name="company_id"/><field name="partner_id"/><field name="currency_id"/><field name="followup_user_id"/><field name="verified"/><field name="status"/></group>
+      <group invisible="not verified"><field name="current_balance"/><field name="sales_after_opening"/><field name="receipts_after_opening"/><field name="as_of_jalali"/></group>
+      <group string="مبنای بررسی حساب" groups="sales_team.group_sale_manager">
+        <field name="opening_date" invisible="True"/><field name="opening_date_jalali" required="True"/><field name="opening_amount"/><field name="evidence"/>
+      </group>
+      <field name="line_ids" groups="sales_team.group_sale_manager">
+        <tree editable="bottom"><field name="date" column_invisible="True"/><field name="date_jalali" required="True"/><field name="kind"/><field name="order_id"/><field name="sale_amount"/><field name="amount"/><field name="currency_id" column_invisible="True"/><field name="evidence"/></tree>
+      </field>
+      <p>این مانده برای پیگیری مشتری است. کوتیشن به‌تنهایی بدهی محسوب نمی‌شود؛ مدیر باید فروش واقعی و مبنای حساب را بررسی کند.</p>
+    </sheet></form></field>
+  </record>
+  <record id="balance_search" model="ir.ui.view"><field name="name">vagirest.customer.balance.search</field><field name="model">vagirest.customer.balance</field>
+    <field name="arch" type="xml"><search><field name="partner_id"/><field name="followup_user_id"/>
+      <filter name="debtor" string="بدهکاران بررسی‌شده" domain="[('status', '=', 'debtor')]"/>
+      <filter name="unknown" string="در انتظار بررسی" domain="[('verified', '=', False)]"/>
+    </search></field>
+  </record>
+  <record id="balance_action" model="ir.actions.act_window"><field name="name">مانده مشتریان برای پیگیری</field><field name="res_model">vagirest.customer.balance</field><field name="view_mode">tree,form</field></record>
+  <menuitem id="balance_menu" name="مانده مشتریان برای پیگیری" parent="spreadsheet_dashboard.spreadsheet_dashboard_menu_root" action="balance_action" sequence="41" groups="sales_team.group_sale_manager,vagirest_native_dashboard.group_personal_dashboard"/>
+  <record id="partner_balance_tab" model="ir.ui.view"><field name="name">res.partner.vagirest.balance</field><field name="model">res.partner</field><field name="inherit_id" ref="base.view_partner_form"/>
+    <field name="arch" type="xml"><xpath expr="//notebook" position="inside">
+      <page name="vagirest_balances" string="مانده برای پیگیری" groups="sales_team.group_sale_manager,vagirest_native_dashboard.group_personal_dashboard" invisible="parent_id">
+        <field name="vagirest_balance_ids" context="{'default_partner_id': id, 'form_view_ref': 'vagirest_customer_receipts.balance_form'}">
+          <tree><field name="currency_id"/><field name="followup_user_id"/><field name="status"/><field name="current_balance" invisible="status == 'unknown'"/></tree>
+        </field>
+      </page>
+    </xpath></field>
+  </record>
+</odoo>
